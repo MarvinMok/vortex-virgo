@@ -313,7 +313,14 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
   auto type = get_addr_type(addr);
   if (type == AddrType::Shared) {
     core_->local_mem()->read(data, addr, size);
-  } else {
+  } else if (type == AddrType::MMIO) {
+    uint8_t* d = (uint8_t*)data;
+    for (uint64_t i = 0; i < size; i++) {
+      d[i] = 0;
+    }
+    std::cout << "MMIO read at 0x" << std::hex << addr << std::endl;
+  } 
+  else {
     try
     {
       mmu_.read(data, addr, size, ACCESS_TYPE::LOAD);
@@ -331,6 +338,12 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
   auto type = get_addr_type(addr);
   if (type == AddrType::Shared) {
     core_->local_mem()->read(data, addr, size);
+  } else if (type == AddrType::MMIO) {
+    uint8_t* d = (uint8_t*)data;
+    for (uint64_t i = 0; i < size; i++) {
+      d[i] = 0;
+    }
+    std::cout << "core: " << core_->id() << ", MMIO read at 0x" << std::hex << addr << std::endl;
   } else {
     mmu_.read(data, addr, size, 0);
   }
@@ -348,6 +361,8 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
   } else {
     if (type == AddrType::Shared) {
       core_->local_mem()->write(data, addr, size);
+    } else if (type == AddrType::MMIO) {
+      std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
     } else {
       try
       {
@@ -369,6 +384,8 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
   if (addr >= uint64_t(IO_COUT_ADDR)
    && addr < (uint64_t(IO_COUT_ADDR) + IO_COUT_SIZE)) {
     this->writeToStdOut(data, addr, size);
+  } else if (type == AddrType::MMIO) {
+    std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
   } else {
     if (type == AddrType::Shared) {
       core_->local_mem()->write(data, addr, size);

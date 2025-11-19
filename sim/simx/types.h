@@ -706,13 +706,19 @@ using IntrArgs = std::variant<
 enum class AddrType {
   Global,
   Shared,
-  IO
+  IO,
+  MMIO
 };
 
 inline AddrType get_addr_type(uint64_t addr) {
   if (addr >= IO_BASE_ADDR && addr < IO_END_ADDR) {
      return AddrType::IO;
   }
+
+  if (addr >= MMIO_BASE_ADDR && addr < MMIO_END_ADDR) {
+     return AddrType::MMIO;
+  }
+
   if (LMEM_ENABLED) {
     if (addr >= LMEM_BASE_ADDR && (addr-LMEM_BASE_ADDR) < (1 << LMEM_LOG_SIZE)) {
         return AddrType::Shared;
