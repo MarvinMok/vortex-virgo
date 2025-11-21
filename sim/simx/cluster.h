@@ -69,6 +69,10 @@ public:
 
   PerfStats perf_stats() const;
 
+  const LocalMem::Ptr& local_mem() const {
+    return local_mem_;
+  }
+
 private:
   uint32_t                    cluster_id_;
   ProcessorImpl*              processor_;
@@ -76,6 +80,7 @@ private:
   std::vector<CoreMask>       barriers_;
   CacheSim::Ptr               l2cache_;
   uint32_t                    cores_per_socket_;
+  LocalMem::Ptr               local_mem_;
 };
 
 } // namespace vortex

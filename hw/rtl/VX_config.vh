@@ -111,7 +111,7 @@
 `endif
 
 `ifndef SOCKET_SIZE
-`define SOCKET_SIZE `MIN(4, `NUM_CORES)
+`define SOCKET_SIZE 1 // one core per socket
 `endif
 
 `ifdef L1_DISABLE
@@ -220,7 +220,7 @@
 `define IO_END_ADDR     `USER_BASE_ADDR
 
 `ifndef LMEM_LOG_SIZE
-`define LMEM_LOG_SIZE   14
+`define LMEM_LOG_SIZE   14 // todo: set size of cluster local memory
 `endif
 
 `ifndef LMEM_BASE_ADDR

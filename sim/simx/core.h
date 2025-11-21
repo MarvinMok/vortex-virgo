@@ -143,8 +143,11 @@ public:
     return socket_;
   }
 
-  const LocalMem::Ptr& local_mem() const {
-    return local_mem_;
+  // const LocalMem::Ptr& local_mem() const {
+  //   return local_mem_;
+  // }
+  const LsuArbiter::Ptr& lmem_arb() const {
+    return lmem_arb_;
   }
 
   const MemCoalescer::Ptr& mem_coalescer(uint32_t idx) const {
@@ -207,9 +210,10 @@ private:
   std::vector<Operands::Ptr> operands_;
   std::vector<Dispatcher::Ptr> dispatchers_;
   std::vector<FuncUnit::Ptr> func_units_;
-  LocalMem::Ptr local_mem_;
+  // LocalMem::Ptr local_mem_;
   std::vector<LocalMemSwitch::Ptr> lmem_switch_;
   std::vector<MemCoalescer::Ptr> mem_coalescers_;
+  LsuArbiter::Ptr lmem_arb_;
 
   PipelineLatch fetch_latch_;
   PipelineLatch decode_latch_;

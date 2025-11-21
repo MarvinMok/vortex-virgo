@@ -69,22 +69,6 @@ Core::Core(const SimContext& ctx,
     mem_coalescers_.at(b) = MemCoalescer::Create(sname, LSU_CHANNELS, DCACHE_CHANNELS, DCACHE_WORD_SIZE, LSUQ_OUT_SIZE, 1);
   }
 
-  // create local memory
-  snprintf(sname, 100, "%s-lmem", this->name().c_str());
-  local_mem_ = LocalMem::Create(sname, LocalMem::Config{
-    (1 << LMEM_LOG_SIZE),
-    LSU_WORD_SIZE,
-    LSU_CHANNELS,
-    log2ceil(LMEM_NUM_BANKS),
-    false
-  });
-
-  // create lmem switch
-  for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
-    snprintf(sname, 100, "%s-lmem_switch%d", this->name().c_str(), b);
-    lmem_switch_.at(b) = LocalMemSwitch::Create(sname, 1);
-  }
-
   // create dcache adapter
   std::vector<LsuMemAdapter::Ptr> lsu_dcache_adapter(NUM_LSU_BLOCKS);
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
@@ -92,32 +76,48 @@ Core::Core(const SimContext& ctx,
     lsu_dcache_adapter.at(b) = LsuMemAdapter::Create(sname, DCACHE_CHANNELS, 1);
   }
 
+  // create local memory
+  // snprintf(sname, 100, "%s-lmem", this->name().c_str());
+  // local_mem_ = LocalMem::Create(sname, LocalMem::Config{
+  //   (1 << LMEM_LOG_SIZE),
+  //   LSU_WORD_SIZE,
+  //   LSU_CHANNELS,
+  //   log2ceil(LMEM_NUM_BANKS),
+  //   false
+  // });
+
+  // create lmem switch
+  for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
+    snprintf(sname, 100, "%s-lmem_switch%d", this->name().c_str(), b);
+    lmem_switch_.at(b) = LocalMemSwitch::Create(sname, 1);
+  }
+
   // create lmem arbiter
   snprintf(sname, 100, "%s-lmem_arb", this->name().c_str());
-  auto lmem_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
-
-  // create lmem adapter
-  snprintf(sname, 100, "%s-lsu_lmem_adapter", this->name().c_str());
-  auto lsu_lmem_adapter = LsuMemAdapter::Create(sname, LSU_CHANNELS, 1);
+  lmem_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
 
   // connect lmem switch
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
+    // bind ReqDC port (output from lmem switch) to input port ReqIn of mem_coalescer
     lmem_switch_.at(b)->ReqDC.bind(&mem_coalescers_.at(b)->ReqIn);
-    lmem_switch_.at(b)->ReqLmem.bind(&lmem_arb->ReqIn.at(b));
+    lmem_switch_.at(b)->ReqLmem.bind(&lmem_arb_->ReqIn.at(b));
+    // lmem_arb has multiple input ports so choose one input port of many from ReqIn
 
     mem_coalescers_.at(b)->RspIn.bind(&lmem_switch_.at(b)->RspDC);
-    lmem_arb->RspIn.at(b).bind(&lmem_switch_.at(b)->RspLmem);
+    lmem_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspLmem);
   }
 
   // connect lmem arbiter
-  lmem_arb->ReqOut.at(0).bind(&lsu_lmem_adapter->ReqIn);
-  lsu_lmem_adapter->RspIn.bind(&lmem_arb->RspOut.at(0));
+  // lmem_arb->ReqOut.at(0).bind(lsu_lmem_adapter->ReqIn);
+  // *lsu_lmem_adapter->RspIn.bind(&lmem_arb->RspOut.at(0));
 
   // connect lmem adapter
-  for (uint32_t c = 0; c < LSU_CHANNELS; ++c) {
-    lsu_lmem_adapter->ReqOut.at(c).bind(&local_mem_->Inputs.at(c));
-    local_mem_->Outputs.at(c).bind(&lsu_lmem_adapter->RspOut.at(c));
-  }
+  // for (uint32_t c = 0; c < LSU_CHANNELS; ++c) {
+  //   // socket()->cluster()->core_arbiter(), maybe?
+  //   // todo: bind to CoreArbiter
+  //   lsu_lmem_adapter->ReqOut.at(c).bind(&local_mem_->Inputs.at(c));
+  //   local_mem_->Outputs.at(c).bind(&lsu_lmem_adapter->RspOut.at(c));
+  // }
 
   // connect dcache coalescer
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
