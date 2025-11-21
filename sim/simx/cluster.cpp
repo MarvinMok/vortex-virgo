@@ -33,6 +33,8 @@ Cluster::Cluster(const SimContext& ctx,
 
   uint32_t sockets_per_cluster = sockets_.size();
 
+  dma_ = Virgo_DMA::Create(arch, this);
+
   // create sockets
 
   for (uint32_t i = 0; i < sockets_per_cluster; ++i) {
@@ -92,6 +94,7 @@ void Cluster::attach_ram(RAM* ram) {
   for (auto& socket : sockets_) {
     socket->attach_ram(ram);
   }
+  dma_->attach_ram(ram);
 }
 
 #ifdef VM_ENABLE
