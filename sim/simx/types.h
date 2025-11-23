@@ -707,7 +707,8 @@ enum class AddrType {
   Global,
   Shared,
   IO,
-  MMIO
+  MMIO,
+  MMIO_VIRGO
 };
 
 inline AddrType get_addr_type(uint64_t addr) {
@@ -717,6 +718,10 @@ inline AddrType get_addr_type(uint64_t addr) {
 
   if (addr >= MMIO_BASE_ADDR && addr < MMIO_END_ADDR) {
      return AddrType::MMIO;
+  }
+
+  if (addr >= MMIO_VIRGO_BASE_ADDR && addr < MMIO_VIRGO_END_ADDR) {
+     return AddrType::MMIO_VIRGO;
   }
 
   if (LMEM_ENABLED) {

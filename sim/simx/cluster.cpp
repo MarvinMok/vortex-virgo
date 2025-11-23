@@ -33,6 +33,8 @@ Cluster::Cluster(const SimContext& ctx,
 
   uint32_t sockets_per_cluster = sockets_.size();
 
+  virgo_matmul_ = Virgo_MatMul::Create(arch, this);
+
   // create local memory
   // create BEFORE sockets s.t. cores have access to local memory
   snprintf(sname, 100, "%s-lmem", this->name().c_str());

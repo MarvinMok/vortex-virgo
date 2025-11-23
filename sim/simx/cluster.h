@@ -21,6 +21,7 @@
 #include "core.h"
 #include "socket.h"
 #include "constants.h"
+#include "virgo.h"
 
 namespace vortex {
 
@@ -73,6 +74,10 @@ public:
     return local_mem_;
   }
 
+  const Virgo_MatMul::Ptr& virgo_matmul() const {
+    return virgo_matmul_;
+  }
+
 private:
   uint32_t                    cluster_id_;
   ProcessorImpl*              processor_;
@@ -81,6 +86,7 @@ private:
   CacheSim::Ptr               l2cache_;
   uint32_t                    cores_per_socket_;
   LocalMem::Ptr               local_mem_;
+  Virgo_MatMul::Ptr           virgo_matmul_;
 };
 
 } // namespace vortex

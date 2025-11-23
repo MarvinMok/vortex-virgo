@@ -21,16 +21,21 @@
 namespace vortex {
 
 namespace virgo {
+
+uint32_t tag = 0;
     
 typedef struct {
-    uint32_t src_addr;
+    uint32_t src_addr_A;
+    uint32_t src_addr_B;
     uint32_t dst_addr;
     uint32_t data_type_size;
-    uint32_t size;
-    uint32_t stride;
+    uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
+    uint32_t num_cols_A; 
+    uint32_t num_cols_B;
     uint32_t core_id;
     uint32_t wid;
-} dma_load_t;
+    uint32_t tag; // 10
+} virgo_compute_t;
 
 static __attribute__((always_inline)) uint32_t fence() {
     //uint32_t cores_per_cluster = vx_num_cores() / vx_num_clusters();
@@ -63,6 +68,40 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
     
     dma_load_t* MMIO_WRITE_ADDR = (dma_load_t*)0x0000F800;
     *(MMIO_WRITE_ADDR) = dma_load;
+
+    //set all threads active
+    vx_tmc(-1);
+
+    return 0;
+}
+
+template <typename T>
+static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_addr_B, T* dst_addr, uint32_t num_rows_A, uint32_t num_cols_A, uint32_t num_cols_B) {
+   
+    //only one thread per warp
+    vx_tmc_one();
+
+    uint32_t core_id = vx_core_id();
+    uint32_t wid = vx_warp_id();
+
+    virgo_compute_t virgo_compute = {
+        .src_addr_A = src_addr_A,
+        .src_addr_B = src_addr_B,
+        .dst_addr = dst_addr,
+        .data_type_size = sizeof(T),
+        .num_rows_A = num_rows_A,
+        .num_cols_A = num_cols_A,
+        .num_cols_B = num_cols_B,
+        .core_id = core_id,
+        .wid = wid,
+        .tag = tag,
+    };
+    
+    // start of MMIO_VIRGO addressing E800 is start of MMIO_VIRGO addressing
+    virgo_compute_t* MMIO_VIRGO_WRITE_ADDR = (virgo_compute_t*) 0x0000E800 + (wid*vx_num_cores() + core_id) * 44; 
+    *(MMIO_VIRGO_WRITE_ADDR) = virgo_compute;
+    uint32_t* MMIO_VIRGO_COMMIT_ADDR = 0x0000E800 + (wid*vx_num_cores() + core_id)*44 + 40;
+    *(MMIO_VIRGO_WRITE_ADDR) = (wid*vx_num_cores() + core_id); // unique for no real reason
 
     //set all threads active
     vx_tmc(-1);
