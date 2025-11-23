@@ -18,7 +18,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 const char* kernel_file = "kernel.vxbin";
-uint32_t count = 4;
+uint32_t count = 1;
 
 vx_device_h device = nullptr;
 vx_buffer_h src_buffer = nullptr;
@@ -82,6 +82,7 @@ int main(int argc, char *argv[]) {
   uint32_t num_points = count * total_threads;
   uint32_t buf_size = num_points * sizeof(char);
 
+  std::cout << "count: " << count << std::endl;
   std::cout << "number of points: " << num_points << std::endl;
   std::cout << "buffer size: " << buf_size << " bytes" << std::endl;
 

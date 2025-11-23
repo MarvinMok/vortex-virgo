@@ -57,6 +57,8 @@ void LocalMemSwitch::tick() {
     out_dc_req.uuid  = in_req.uuid;
 
     LsuReq out_lmem_req(out_dc_req);
+    LsuRsp out_mmio_rsp(in_req.mask.size());
+    bool has_mmio = false;
 
     for (uint32_t i = 0; i < in_req.mask.size(); ++i) {
       if (in_req.mask.test(i)) {
@@ -64,6 +66,10 @@ void LocalMemSwitch::tick() {
         if (type == AddrType::Shared) {
           out_lmem_req.mask.set(i);
           out_lmem_req.addrs.at(i) = in_req.addrs.at(i);
+        } else if (type == AddrType::MMIO) {
+          out_mmio_rsp.mask.set(i);
+          has_mmio = true;
+          std::cout << "MMIO LocalMemReq at 0x" << std::hex << in_req.addrs.at(i) << std::endl;
         } else {
           out_dc_req.mask.set(i);
           out_dc_req.addrs.at(i) = in_req.addrs.at(i);
@@ -79,6 +85,14 @@ void LocalMemSwitch::tick() {
     if (!out_lmem_req.mask.none()) {
       ReqLmem.push(out_lmem_req, delay_);
       DT(4, this->name() << "-lmem-req: " << out_lmem_req);
+    }
+
+    //send dummy response to LSU for now
+    if (has_mmio) {
+      out_mmio_rsp.tag = in_req.tag;
+      out_mmio_rsp.cid = in_req.cid;
+      out_mmio_rsp.uuid = in_req.uuid;
+      RspIn.push(out_mmio_rsp, 1);
     }
     ReqIn.pop();
   }

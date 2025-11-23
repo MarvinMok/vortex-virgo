@@ -1,5 +1,6 @@
 #include <vx_spawn.h>
 #include <vx_print.h>
+#include <vx_virgo.h>
 #include "common.h"
 
 void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
@@ -7,6 +8,9 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
 	char* src_ptr = (char*)arg->src_addr;
 	char value = 'A' + src_ptr[blockIdx.x];
 	vx_printf("cid=%d: task=%d, value=%c\n", cid, blockIdx.x, value);
+	uint32_t fence = vortex::virgo::fence();
+	vx_printf("fence core: %d, fence: %d\n", cid, fence);
+	//vortex::virgo::dma_load<uint32_t>(nullptr, nullptr, 0, 0);
 }
 
 int main() {
