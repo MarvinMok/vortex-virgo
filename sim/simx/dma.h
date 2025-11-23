@@ -47,8 +47,9 @@ private:
         uint32_t src_addr;
         uint32_t dst_addr;
         uint32_t data_type_size;
-        uint32_t size;
-        uint32_t stride;
+        uint32_t num_rows;
+        uint32_t num_cols;
+        uint32_t row_stride;
         uint32_t core_id;
         uint32_t wid;
     } dma_load_t;

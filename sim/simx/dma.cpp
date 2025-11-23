@@ -10,7 +10,7 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , cluster_(cluster)
     , warp_counter(0)
     , arch_(arch)
-    , write_registers(8, 0)  
+    , write_registers(256, 0)  
     , read_registers(1, 0) 
 {
     
@@ -25,12 +25,13 @@ void Virgo_DMA::read(const void* data,  uint64_t /*addr*/, uint32_t /*size*/) {
 
 void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
     uint32_t* d = (uint32_t*)data;
-    uint32_t index =  ((static_cast<uint32_t>(addr) - MMIO_WRITE_ADDR) & 0xFF ) >> 2;
+    uint32_t index = ((static_cast<uint32_t>(addr) - MMIO_WRITE_ADDR) & 0xFF ) >> 2;
     std::cout << "DMA write to index " << index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_WRITE_ADDR << ", data " << *d << std::endl;
     write_registers.at(index) = *d;
 
-    if (index == 7) {
+    if (index == 0x10) {
         warp_counter++;
+        std::cout << "warp counter: " << warp_counter << std::endl;
         if (warp_counter == arch_.num_warps() * arch_.num_cores()) {
             warp_counter = 0;
             std::cout << "Begin DMA transfer" << std::endl;
@@ -38,10 +39,11 @@ void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
                 .src_addr = write_registers.at(0),
                 .dst_addr = write_registers.at(1),
                 .data_type_size = write_registers.at(2),
-                .size = write_registers.at(3),
-                .stride = write_registers.at(4),
-                .core_id = write_registers.at(5),
-                .wid = write_registers.at(6)
+                .num_rows = write_registers.at(3),
+                .num_cols = write_registers.at(4),
+                .row_stride = write_registers.at(5),
+                .core_id = write_registers.at(6),
+                .wid = write_registers.at(7)
             };
             dma_load_queue_.push(dma_load);
             read_registers.at(0)++;
@@ -54,16 +56,21 @@ void Virgo_DMA::dma_transfer(){
     
     auto dma_load = dma_load_queue_.front();
     dma_load_queue_.pop();
-    
+    std::cout << "DMA transfer from " << dma_load.src_addr << " to " << dma_load.dst_addr << std::endl;
+    std::cout << "Data type size: " << dma_load.data_type_size << std::endl;
+    std::cout << "Num rows: " << dma_load.num_rows << std::endl;
+    std::cout << "Num cols: " << dma_load.num_cols << std::endl;
+    std::cout << "Row stride: " << dma_load.row_stride << std::endl;
     auto src_addr_type = get_addr_type(dma_load.src_addr);
     auto dst_addr_type = get_addr_type(dma_load.dst_addr);
 
-    auto end_addr = dma_load.src_addr + dma_load.stride * dma_load.data_type_size * dma_load.size;
-    auto addr_stride = dma_load.stride * dma_load.data_type_size;
-    for (auto src_addr = dma_load.src_addr, dst_addr = dma_load.dst_addr;
-        src_addr < end_addr; 
-        src_addr += addr_stride, dst_addr += dma_load.data_type_size) {
+    for (uint32_t row = 0; row < dma_load.num_rows; row++) {
+        for (uint32_t col = 0; col < dma_load.num_cols; col++) {
+            auto index = row * dma_load.row_stride + col;
+            auto src_addr = dma_load.src_addr + index * dma_load.data_type_size;
+            auto dst_addr = dma_load.dst_addr + index * dma_load.data_type_size;
             data_transfer(src_addr, dst_addr, dma_load.data_type_size, src_addr_type, dst_addr_type);
+        }
     }
     read_registers.at(0)--;
 }

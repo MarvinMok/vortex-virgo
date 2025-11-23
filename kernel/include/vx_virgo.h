@@ -26,8 +26,9 @@ typedef struct {
     uint32_t src_addr;
     uint32_t dst_addr;
     uint32_t data_type_size;
-    uint32_t size;
-    uint32_t stride;
+    uint32_t num_rows;
+    uint32_t num_cols;
+    uint32_t row_stride;
     uint32_t core_id;
     uint32_t wid;
 } dma_load_t;
@@ -40,8 +41,7 @@ static __attribute__((always_inline)) uint32_t fence() {
     vx_tmc_one();
     
     uint32_t local_core_id = vx_core_id(); // % cores_per_cluster;
-    uint32_t address_offset = (local_core_id * vx_num_warps() + vx_warp_id()) * 4;
-    uint32_t* MMIO_READ_ADDR = (uint32_t*)(0x0000F900 + address_offset);
+    uint32_t* MMIO_READ_ADDR = (uint32_t*)(0x0000F900);
     uint32_t hw_counter = *MMIO_READ_ADDR;
     vx_printf("fence core: %d, fence: %d\n", local_core_id, hw_counter);
     while (counter != 0 && counter >= hw_counter) {
@@ -57,7 +57,7 @@ static __attribute__((always_inline)) uint32_t fence() {
 }
 
 template <typename T>
-static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t size, uint32_t stride) {
+static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t row_stride) {
    
     //only one core does the dma load
     vx_tmc_one();
@@ -69,16 +69,17 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
         .src_addr = reinterpret_cast<uint32_t>(src_addr),
         .dst_addr = reinterpret_cast<uint32_t>(dst_addr),
         .data_type_size = sizeof(T),
-        .size = size,
-        .stride = stride,
-        .core_id = core_id,
+        .num_rows = num_rows,
+        .num_cols = num_cols,
+        .row_stride = row_stride,
+        .core_id = core_id, //maybe unused
         .wid = wid
     };
     
     dma_load_t* MMIO_WRITE_ADDR = (dma_load_t* )0x0000F800;
-    uint8_t* MMIO_COMMIT_ADDR = (uint8_t*)0x0000F81c;
+    uint8_t* MMIO_COMMIT_ADDR = (uint8_t*)0x0000F840;
     *(MMIO_WRITE_ADDR) = dma_load;
-    *(MMIO_COMMIT_ADDR) = vx_core_id() * vx_num_warps() + vx_warp_id();
+    *(MMIO_COMMIT_ADDR) = vx_core_id() * vx_num_warps() + vx_warp_id(); //write unique values to prevent memory coalescence
 
     //set all threads active
     vx_tmc(-1);
