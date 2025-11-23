@@ -1,4 +1,6 @@
 #include <vx_spawn.h>
+#include <vx_print.h>
+#include <vx_intrinsics.h>
 #include "common.h"
 
 void kernel_body(kernel_arg_t *arg) {
@@ -32,7 +34,8 @@ void kernel_body(kernel_arg_t *arg) {
     local_B[l_row * tile_size + l_col] = B_ptr[(k + l_row) * size + g_col];
 
     // Synchronize all warps in current group
-    __syncthreads();
+    vx_printf("warp %d: load tile %d sync\n", vx_warp_id(), k);
+    vx_barrier(0x80000000, vx_num_cores());
 
     // Compute partial sum for the local tile
     for (uint32_t j = 0; j < tile_size; ++j) {
@@ -40,7 +43,8 @@ void kernel_body(kernel_arg_t *arg) {
     }
 
     // Synchronize all warps in current group
-    __syncthreads();
+    vx_printf("warp %d: load tile %d sync2\n", vx_warp_id(), k);
+    vx_barrier(0x80000000, vx_num_cores());
   }
 
   // Store the computed sum into the result matrix C

@@ -144,15 +144,15 @@ static void __attribute__ ((noinline)) process_thread_groups() {
 
   vx_kernel_func_cb callback = targs->callback;
   const void* arg = targs->arg;
-
+  vx_printf("start group=%d, end group=%d, group stride=%d\n", start_group, end_group, group_stride);
   for (uint32_t group_id = start_group; group_id < end_group; group_id += group_stride) {
     blockIdx.x = group_id % gridDim_x;
     blockIdx.y = (group_id / gridDim_x) % gridDim_y;
     blockIdx.z = group_id / (gridDim_x * gridDim_y);
-    callback((void*)arg);
     vx_printf("process_thread_groups: cluster=%d core=%d warp=%d thread=%d group=%d task_id=%d blockIdx=(%d,%d,%d) threadIdx=(%d,%d,%d)\n", 
       vx_cluster_id(), vx_core_id(), vx_warp_id(), thread_id, group_id, local_task_id,
       blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z);
+    callback((void*)arg);
   }
 }
 
@@ -291,6 +291,7 @@ int vx_spawn_threads(uint32_t dimension,
 
     // set global variables
     __warps_per_group = warps_per_group;
+    vx_printf("vx_spawn_threads (groups): warps_per_group=%d\n", warps_per_group);
 
     // execute callback on other warps
     vx_wspawn(active_warps, process_thread_groups_stub);

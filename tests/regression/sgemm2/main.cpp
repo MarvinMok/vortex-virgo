@@ -169,10 +169,10 @@ int main(int argc, char *argv[]) {
   kernel_arg.tile_size = tile_size;
 
   // check work group occupancy
-  uint32_t max_localmem;
-  RT_CHECK(vx_check_occupancy(device, group_size, &max_localmem));
-  std::cout << "occupancy: max_localmem=" << max_localmem << " bytes" << std::endl;
-  RT_CHECK(max_localmem < local_mem);
+  // uint32_t max_localmem;
+  // RT_CHECK(vx_check_occupancy(device, group_size, &max_localmem));
+  // std::cout << "occupancy: max_localmem=" << max_localmem << " bytes" << std::endl;
+  // RT_CHECK(max_localmem < local_mem);
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;

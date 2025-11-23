@@ -253,7 +253,7 @@ bool Emulator::barrier(uint32_t bar_id, uint32_t count, uint32_t wid) {
 
   uint32_t bar_idx = bar_id & 0x7fffffff;
   bool is_global = (bar_id >> 31);
-
+  std::cout << "*** Suspend core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_idx << std::endl;
   auto& barrier = barriers_.at(bar_idx);
   barrier.set(wid);
   DP(3, "*** Suspend core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_idx);
