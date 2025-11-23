@@ -312,7 +312,7 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
   DP(1, "*** dcache_read 0x" << std::hex << addr << ", size = 0x "  << size);
   auto type = get_addr_type(addr);
   if (type == AddrType::Shared) {
-    core_->local_mem()->read(data, addr, size);
+    core_->socket()->cluster()->local_mem()->read(data, addr, size);
   } else if (type == AddrType::MMIO) {
     std::cout << "MMIO read at 0x" << std::hex << addr << std::endl;
     core_->socket()->cluster()->dma()->read(data, addr, size);
@@ -334,7 +334,7 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
 void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
   auto type = get_addr_type(addr);
   if (type == AddrType::Shared) {
-    core_->local_mem()->read(data, addr, size);
+    core_->socket()->cluster()->local_mem()->read(data, addr, size);
   } else if (type == AddrType::MMIO) {
     core_->socket()->cluster()->dma()->read(data, addr, size);
     std::cout << "core: " << core_->id() << ", MMIO read at 0x" << std::hex << addr << std::endl;
@@ -354,7 +354,7 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
      this->writeToStdOut(data, addr, size);
   } else {
     if (type == AddrType::Shared) {
-      core_->local_mem()->write(data, addr, size);
+      core_->socket()->cluster()->local_mem()->write(data, addr, size);
     } else if (type == AddrType::MMIO) {
       core_->socket()->cluster()->dma()->write(data, addr, size);
       std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
@@ -384,7 +384,7 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
     std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
   } else {
     if (type == AddrType::Shared) {
-      core_->local_mem()->write(data, addr, size);
+      core_->socket()->cluster()->local_mem()->write(data, addr, size);
     } else {
       mmu_.write(data, addr, size, 0);
     }
@@ -521,7 +521,7 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         auto proc_perf = core_->socket()->cluster()->processor()->perf_stats();
         auto cluster_perf = core_->socket()->cluster()->perf_stats();
         auto socket_perf = core_->socket()->perf_stats();
-        auto lmem_perf = core_->local_mem()->perf_stats();
+        auto lmem_perf = core_->socket()->cluster()->local_mem()->perf_stats();
 
         uint64_t coalescer_misses = 0;
         for (uint i = 0; i < NUM_LSU_BLOCKS; ++i) {

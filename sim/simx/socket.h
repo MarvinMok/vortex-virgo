@@ -51,6 +51,10 @@ public:
     return cluster_;
   }
 
+  const Core::Ptr& cores(uint32_t core_num) const {
+    return cores_.at(core_num);
+  }
+
   void reset();
 
   void tick();

@@ -35,15 +35,24 @@ Cluster::Cluster(const SimContext& ctx,
 
   dma_ = Virgo_DMA::Create(arch, this);
 
-  // create sockets
+  // create local memory
+  // create BEFORE sockets s.t. cores have access to local memory
+  snprintf(sname, 100, "%s-lmem", this->name().c_str());
+  local_mem_ = LocalMem::Create(sname, LocalMem::Config{
+    (1 << LMEM_LOG_SIZE),
+    LSU_WORD_SIZE,
+    LSU_CHANNELS,
+    log2ceil(LMEM_NUM_BANKS),
+    false
+  });
 
+  // create sockets (which create cores within each socket)
   for (uint32_t i = 0; i < sockets_per_cluster; ++i) {
     uint32_t socket_id = cluster_id * sockets_per_cluster + i;
     sockets_.at(i) = Socket::Create(socket_id, this, arch, dcrs);
   }
 
   // Create l2cache
-
   snprintf(sname, 100, "%s-l2cache", this->name().c_str());
   l2cache_ = CacheSim::Create(sname, CacheSim::Config{
     !L2_ENABLED,
@@ -74,6 +83,35 @@ Cluster::Cluster(const SimContext& ctx,
     l2cache_->MemReqPorts.at(i).bind(&this->mem_req_ports.at(i));
     this->mem_rsp_ports.at(i).bind(&l2cache_->MemRspPorts.at(i));
   }
+
+  // create Core Arbiter (type MemArbiter), one output
+  snprintf(sname, 100, "%s-core_arb", this->name().c_str());
+  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
+
+  // create lmem adapter
+  snprintf(sname, 100, "%s-lsu_lmem_adapter", this->name().c_str());
+  auto lsu_lmem_adapter = LsuMemAdapter::Create(sname, LSU_CHANNELS, 1);
+
+  // bind each core lsu_lmem_adapter to the core_arb
+  for (uint32_t i = 0; i < NUM_SOCKETS; ++i) {
+    // lmem_arb ReqOut.at(0) -> CoreArb ReqIn
+    // CoreArb RspIn -> lmem_arb RspOut.at(0)
+    sockets_.at(i)->cores(0)->lmem_arb()->ReqOut.at(0).bind(&core_arb->ReqIn.at(i));
+    core_arb->RspIn.at(i).bind(&sockets_.at(i)->cores(0)->lmem_arb()->RspOut.at(0));
+    // need & or not for bind argument?
+  }
+
+  // connect core_arb -> lmem_adapter
+  core_arb->ReqOut.at(0).bind(&lsu_lmem_adapter->ReqIn);
+  lsu_lmem_adapter->RspIn.bind(&core_arb->RspOut.at(0));
+
+  // bind lmem_adapter to local memory
+  // lmem_adapter takes an LSU requests and outputs a vector of memory requests
+  for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
+    lsu_lmem_adapter->ReqOut.at(i).bind(&local_mem_->Inputs.at(i));
+    local_mem_->Outputs.at(i).bind(&lsu_lmem_adapter->RspOut.at(i));
+  }
+
 }
 
 Cluster::~Cluster() {
