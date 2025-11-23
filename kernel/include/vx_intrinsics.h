@@ -175,6 +175,14 @@ inline __attribute__((const)) int vx_core_id() {
     return ret;
 }
 
+// Return current cluster identifier
+inline __attribute__((const)) int vx_cluster_id() {
+    int ret;
+    __asm__ volatile ("csrr %0, %1" : "=r"(ret) : "i"(VX_CSR_CLUSTER_ID));
+    return ret;
+}
+
+
 // Return active threads mask
 inline __attribute__((const)) int vx_active_threads() {
     int ret;
@@ -203,7 +211,14 @@ inline __attribute__((const)) int vx_num_warps() {
     return ret;
 }
 
-// Return the number of cores per cluster
+// Return the number of clusters 
+inline __attribute__((const)) int vx_num_clusters() {
+    int ret;
+    __asm__ volatile ("csrr %0, %1" : "=r"(ret) : "i"(VX_CSR_NUM_CLUSTERS));
+    return ret;
+}
+
+// Return the number of cores in processor
 inline __attribute__((const)) int vx_num_cores() {
     int ret;
     __asm__ volatile ("csrr %0, %1" : "=r"(ret) : "i"(VX_CSR_NUM_CORES));

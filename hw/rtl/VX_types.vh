@@ -209,10 +209,12 @@
 `define VX_CSR_CORE_ID                  12'hCC2
 `define VX_CSR_ACTIVE_WARPS             12'hCC3
 `define VX_CSR_ACTIVE_THREADS           12'hCC4     // warning! this value is also used in LLVM
+`define VX_CSR_CLUSTER_ID               12'hCC5
 
 `define VX_CSR_NUM_THREADS              12'hFC0
 `define VX_CSR_NUM_WARPS                12'hFC1
 `define VX_CSR_NUM_CORES                12'hFC2
 `define VX_CSR_LOCAL_MEM_BASE           12'hFC3
+`define VX_CSR_NUM_CLUSTERS             12'hFC4
 
 `endif // VX_TYPES_VH

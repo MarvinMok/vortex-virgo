@@ -46,7 +46,7 @@ typedef void (*vx_serial_cb)(void *arg);
   (void*)((int8_t*)csr_read(VX_CSR_LOCAL_MEM_BASE) + __local_group_id * size)
 
 #define __syncthreads() \
-  vx_barrier(__local_group_id, __warps_per_group)
+  vx_barrier(0, __warps_per_group)
 
 // launch a kernel function with a grid of blocks and block of threads
 int vx_spawn_threads(uint32_t dimension,
