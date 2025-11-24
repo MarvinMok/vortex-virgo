@@ -319,7 +319,7 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
       d[i] = 0;
     }
     std::cout << "MMIO read at 0x" << std::hex << addr << std::endl;
-    core_->socket()->cluster()->dma()->read(data, addr, size);
+    // core_->socket()->cluster()->dma()->read(data, addr, size);
   } 
   else {
     try
@@ -345,7 +345,7 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
       d[i] = 0;
     }
     std::cout << "core: " << core_->id() << ", MMIO read at 0x" << std::hex << addr << std::endl;
-    core_->socket()->cluster()->dma()->read(data, addr, size);
+    // core_->socket()->cluster()->dma()->read(data, addr, size);
   } else if (type == AddrType::MMIO_VIRGO) {
     uint8_t* d = (uint8_t*)data;
     for (uint64_t i = 0; i < size; i++) {
@@ -373,7 +373,7 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
       core_->socket()->cluster()->local_mem()->write(data, addr, size);
     } else if (type == AddrType::MMIO) {
       std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
-      core_->socket()->cluster()->dma()->write(data, addr, size);
+      // core_->socket()->cluster()->dma()->write(data, addr, size);
     } else {
       try
       {
@@ -397,7 +397,7 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
     this->writeToStdOut(data, addr, size);
   } else if (type == AddrType::MMIO) {
     std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
-    core_->socket()->cluster()->dma()->write(data, addr, size);
+    // core_->socket()->cluster()->dma()->write(data, addr, size);
   } else if (type == AddrType::MMIO_VIRGO) {
     std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
     core_->socket()->cluster()->virgo_matmul()->write(data, addr, size);

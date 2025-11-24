@@ -14,9 +14,12 @@
 #pragma once
 
 #include <stdint.h>
-
 #include <vx_intrinsics.h>
 #include <vx_print.h>
+#include "tensor_cfg.h"
+
+#define FP32 0
+#define FP16 1
 
 namespace vortex {
 
@@ -32,23 +35,65 @@ typedef struct {
     uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
     uint32_t num_cols_A; 
     uint32_t num_cols_B;
-    uint32_t core_id;
-    uint32_t wid;
-    uint32_t tag; // 10
 } virgo_compute_t;
 
+typedef struct {
+    uint32_t src_addr;
+    uint32_t dst_addr;
+    uint32_t data_type_size;
+    uint32_t num_rows;
+    uint32_t num_cols;
+    uint32_t row_stride;
+    uint32_t core_id;
+    uint32_t wid;
+} dma_load_t;
+
+uint32_t counter = 0;
+uint32_t counter = 0;
+
 static __attribute__((always_inline)) uint32_t fence() {
-    //uint32_t cores_per_cluster = vx_num_cores() / vx_num_clusters();
+    //only one thread needs to read
+    vx_tmc_one();
+    
     uint32_t local_core_id = vx_core_id(); // % cores_per_cluster;
-    uint32_t address_offset = (local_core_id * vx_num_warps() + vx_warp_id()) * 4;
-    uint32_t* MMIO_READ_ADDR = (uint32_t*)(0x0000F900 + address_offset);
-    uint32_t ret = *MMIO_READ_ADDR;
-    vx_printf("fence core: %d, warp: %d\n", local_core_id, vx_warp_id());
-    return ret;
+    uint32_t* MMIO_READ_ADDR = (uint32_t*) (0x0000F900);
+    uint32_t hw_counter = *MMIO_READ_ADDR;
+    vx_printf("fence core: %d, fence: %d\n", local_core_id, hw_counter);
+    while (counter != 0 && counter >= hw_counter) {
+        hw_counter = *MMIO_READ_ADDR;
+    }
+    
+    //set all threads active
+    vx_tmc(-1);
+    counter = counter == 0 ? 0 : counter - 1;
+    //uint32_t cores_per_cluster = vx_num_cores() / vx_num_clusters();
+
+    return counter;
+}
+
+static __attribute__((always_inline)) uint32_t compute_fence() {
+    //only one thread needs to read
+    vx_tmc_one();
+    
+    uint32_t local_core_id = vx_core_id();
+    uint32_t* MMIO_READ_ADDR = (uint32_t*) (0x0000EC00);
+    uint32_t hw_counter = *MMIO_READ_ADDR;
+
+    vx_printf("fence core: %d, fence: %d\n", local_core_id, hw_counter);
+
+    while (counter != 0 && counter >= hw_counter) {
+        hw_counter = *MMIO_READ_ADDR;
+    }
+    
+    //set all threads active
+    vx_tmc(-1);
+    counter = counter == 0 ? 0 : counter - 1;
+
+    return counter;
 }
 
 template <typename T>
-static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t size, uint32_t stride) {
+static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t row_stride) {
    
     //only one core does the dma load
     vx_tmc_one();
@@ -57,20 +102,24 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
     uint32_t wid = vx_warp_id();
 
     dma_load_t dma_load = {
-        .src_addr = 0,
-        .dst_addr = 0,
+        .src_addr = reinterpret_cast<uint32_t>(src_addr),
+        .dst_addr = reinterpret_cast<uint32_t>(dst_addr),
         .data_type_size = sizeof(T),
-        .size = size,
-        .stride = stride,
-        .core_id = core_id,
+        .num_rows = num_rows,
+        .num_cols = num_cols,
+        .row_stride = row_stride,
+        .core_id = core_id, //maybe unused
         .wid = wid
     };
     
-    dma_load_t* MMIO_WRITE_ADDR = (dma_load_t*)0x0000F800;
+    dma_load_t* MMIO_WRITE_ADDR = (dma_load_t* )0x0000F800;
+    uint8_t* MMIO_COMMIT_ADDR = (uint8_t*)0x0000F840;
     *(MMIO_WRITE_ADDR) = dma_load;
+    *(MMIO_COMMIT_ADDR) = vx_core_id() * vx_num_warps() + vx_warp_id(); //write unique values to prevent memory coalescence
 
     //set all threads active
     vx_tmc(-1);
+    counter++;
 
     return 0;
 }
@@ -84,24 +133,37 @@ static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_add
     uint32_t core_id = vx_core_id();
     uint32_t wid = vx_warp_id();
 
-    virgo_compute_t virgo_compute = {
-        .src_addr_A = src_addr_A,
-        .src_addr_B = src_addr_B,
-        .dst_addr = dst_addr,
-        .data_type_size = sizeof(T),
-        .num_rows_A = num_rows_A,
-        .num_cols_A = num_cols_A,
-        .num_cols_B = num_cols_B,
-        .core_id = core_id,
-        .wid = wid,
-        .tag = tag,
-    };
+    virgo_compute_t virgo_compute;
+    if (std::is_same_v<T, float>) {
+        virgo_compute = {
+            .src_addr_A = src_addr_A,
+            .src_addr_B = src_addr_B,
+            .dst_addr = dst_addr,
+            .data_type = FP32,
+            .num_rows_A = num_rows_A,
+            .num_cols_A = num_cols_A,
+            .num_cols_B = num_cols_B,
+        };
+
+    } else if (std::is_same_v<T, vortex::tensor::fp16>) {
+        virgo_compute = {
+            .src_addr_A = src_addr_A,
+            .src_addr_B = src_addr_B,
+            .dst_addr = dst_addr,
+            .data_type = FP16, // other data types, only FP16 rn
+            .num_rows_A = num_rows_A,
+            .num_cols_A = num_cols_A,
+            .num_cols_B = num_cols_B,
+        };
+    }
     
     // start of MMIO_VIRGO addressing E800 is start of MMIO_VIRGO addressing
-    virgo_compute_t* MMIO_VIRGO_WRITE_ADDR = (virgo_compute_t*) 0x0000E800 + (wid*vx_num_cores() + core_id) * 44; 
+    virgo_compute_t* MMIO_VIRGO_WRITE_ADDR = (virgo_compute_t*) 0x0000E800 + (wid*vx_num_cores() + core_id) * 32; 
     *(MMIO_VIRGO_WRITE_ADDR) = virgo_compute;
-    uint32_t* MMIO_VIRGO_COMMIT_ADDR = 0x0000E800 + (wid*vx_num_cores() + core_id)*44 + 40;
-    *(MMIO_VIRGO_WRITE_ADDR) = (wid*vx_num_cores() + core_id); // unique for no real reason
+    uint32_t* MMIO_VIRGO_COMMIT_ADDR = (uint32_t*) 0x0000E800 + (wid*vx_num_cores() + core_id)*32 + 28;
+    *(MMIO_VIRGO_COMMIT_ADDR) = tag; // write tag to COMMIT address
+
+    tag++;
 
     //set all threads active
     vx_tmc(-1);
