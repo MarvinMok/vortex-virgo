@@ -132,6 +132,8 @@ void Cluster::attach_ram(RAM* ram) {
   for (auto& socket : sockets_) {
     socket->attach_ram(ram);
   }
+
+  virgo_matmul_->attach_ram(ram);
 }
 
 #ifdef VM_ENABLE

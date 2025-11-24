@@ -320,6 +320,9 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
     }
     std::cout << "MMIO read at 0x" << std::hex << addr << std::endl;
     // core_->socket()->cluster()->dma()->read(data, addr, size);
+  } else if (type == AddrType::MMIO_VIRGO) {
+    std::cout << "core: " << core_->id() << ", MMIO_VIRGO read at 0x" << std::hex << addr << std::endl;
+    core_->socket()->cluster()->virgo_matmul()->read(data, addr, size);
   } 
   else {
     try
@@ -347,14 +350,9 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
     std::cout << "core: " << core_->id() << ", MMIO read at 0x" << std::hex << addr << std::endl;
     // core_->socket()->cluster()->dma()->read(data, addr, size);
   } else if (type == AddrType::MMIO_VIRGO) {
-    uint8_t* d = (uint8_t*)data;
-    for (uint64_t i = 0; i < size; i++) {
-      d[i] = 0;
-    }
     std::cout << "core: " << core_->id() << ", MMIO_VIRGO read at 0x" << std::hex << addr << std::endl;
     core_->socket()->cluster()->virgo_matmul()->read(data, addr, size);
-  } 
-  else {
+  } else {
     mmu_.read(data, addr, size, 0);
   }
   DPH(2, "Mem Read: addr=0x" << std::hex << addr << ", data=0x" << ByteStream(data, size) << std::dec << " (size=" << size << ", type=" << type << ")" << std::endl);
@@ -374,6 +372,9 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
     } else if (type == AddrType::MMIO) {
       std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
       // core_->socket()->cluster()->dma()->write(data, addr, size);
+    } else if (type == AddrType::MMIO_VIRGO) {
+      std::cout << "MMIO write at 0x" << std::hex << addr << std::endl;
+      core_->socket()->cluster()->virgo_matmul()->write(data, addr, size);
     } else {
       try
       {

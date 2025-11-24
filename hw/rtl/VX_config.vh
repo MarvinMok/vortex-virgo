@@ -219,7 +219,7 @@
 // this is BEFORE MMIO lol
 `ifndef MMIO_VIRGO_BASE_ADDR
 `define MMIO_VIRGO_SIZE             32'h00001000
-`define MMIO_VIRGO_BASE_ADDR        MMIO_BASE_ADDR - `MMIO_VIRGO_SIZE // E800      
+`define MMIO_VIRGO_BASE_ADDR        32'h0000F800 - `MMIO_VIRGO_SIZE // E800      
 `define MMIO_VIRGO_WRITE_ADDR       MMIO_VIRGO_BASE_ADDR
 `define MMIO_VIRGO_BASE_READ_ADDR   MMIO_VIRGO_WRITE_ADDR + 32'h00000100
 `define MMIO_VIRGO_END_ADDR         MMIO_BASE_ADDR
@@ -235,7 +235,7 @@
 
 `endif
 
-`define IO_END_ADDR     `MMIO_BASE_ADDR
+`define IO_END_ADDR     `MMIO_VIRGO_BASE_ADDR
 
 `ifndef LMEM_LOG_SIZE
 `define LMEM_LOG_SIZE   14 // todo: set size of cluster local memory

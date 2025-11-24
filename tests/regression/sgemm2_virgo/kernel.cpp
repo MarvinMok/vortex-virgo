@@ -1,0 +1,53 @@
+#include <vx_spawn.h>
+#include <vx_virgo.h>
+#include <vx_print.h>
+#include "common.h"
+
+void kernel_body(kernel_arg_t *arg) {
+	// Setup buffer arguments
+  vx_printf("kernel start\n");
+  auto A_ptr = reinterpret_cast<TYPE*>(arg->A_addr);
+  auto B_ptr = reinterpret_cast<TYPE*>(arg->B_addr);
+  auto C_ptr = reinterpret_cast<TYPE*>(arg->C_addr);
+
+  // Allocate local memory for the tile of matrix A & B
+	auto local_ptr = __local_mem(2 * blockDim.x * blockDim.y * sizeof(TYPE));
+  auto local_A = (TYPE*)local_ptr;
+  auto local_B = (TYPE*)local_ptr + blockDim.x * blockDim.y;
+
+  auto size = arg->size;
+  auto tile_size = arg->tile_size;
+
+  // Determine global row and column indices
+  auto g_row = blockIdx.x * blockDim.x + threadIdx.x;
+  auto g_col = blockIdx.y * blockDim.y + threadIdx.y;
+
+  // Determine local row and column indices
+  auto l_row = threadIdx.x;
+  auto l_col = threadIdx.y;
+
+  // Loop over tiles
+  for (uint32_t k = 0; k < size; k += tile_size) {
+    // Load tile of matrix A & B to local memory
+    vx_printf("kernel load\n");
+    local_A[l_row * tile_size + l_col] = A_ptr[g_row * size + (k + l_col)];
+    local_B[l_row * tile_size + l_col] = B_ptr[(k + l_row) * size + g_col];
+    vx_printf("kernel waiting 1\n");
+    // Synchronize all warps in current group
+    vx_barrier(1<<31, vx_num_cores());
+    vx_printf("kernel compute\n");
+    // Compute partial sum for the local tile
+    vx_printf("localA: %f, localB: %f\n", local_A[l_row * tile_size + l_col], local_B[l_row * tile_size + l_col]);
+    vortex::virgo::compute<float>(local_A, local_B, C_ptr, tile_size, tile_size, tile_size);
+    vortex::virgo::compute_fence();
+    vx_printf("kernel waiting 2\n");
+    // Synchronize all warps in current group
+    vx_barrier(1<<31, vx_num_cores());
+  }
+
+}
+
+int main() {
+  auto arg = (kernel_arg_t*)csr_read(VX_CSR_MSCRATCH);
+	return vx_spawn_threads(2, arg->grid_dim, arg->block_dim, (vx_kernel_func_cb)kernel_body, arg);
+}
