@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <VX_types.h>
+#include <vx_print.h>
 
 #if defined(__clang__)
 #define __UNIFORM__   __attribute__((annotate("vortex.uniform")))
@@ -151,6 +152,7 @@ inline void vx_join(int stack_ptr) {
 
 // Warp Barrier
 inline void vx_barrier(int barried_id, int num_warps) {
+    vx_printf("barrier %d\n", barried_id);
     __asm__ volatile (".insn r %0, 4, 0, x0, %1, %2" :: "i"(RISCV_CUSTOM0), "r"(barried_id), "r"(num_warps));
 }
 

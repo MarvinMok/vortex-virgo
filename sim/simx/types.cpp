@@ -24,6 +24,8 @@ LocalMemSwitch::LocalMemSwitch(
   , RspIn(this)
   , ReqLmem(this)
   , RspLmem(this)
+  , ReqMMIO(this)
+  , RspMMIO(this)
   , ReqDC(this)
   , RspDC(this)
   , delay_(delay)

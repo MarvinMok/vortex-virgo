@@ -1,6 +1,7 @@
 #include <vx_spawn.h>
 #include <vx_print.h>
 #include <vx_intrinsics.h>
+#include <vx_virgo.h>
 #include "common.h"
 
 void kernel_body(kernel_arg_t *arg) {
@@ -18,8 +19,8 @@ void kernel_body(kernel_arg_t *arg) {
   auto tile_size = arg->tile_size;
 
   // Determine global row and column indices
-  auto g_row = blockIdx.x * blockDim.x + threadIdx.x;
-  auto g_col = blockIdx.y * blockDim.y + threadIdx.y;
+  auto g_row = blockIdx.x * blockDim.x;
+  auto g_col = blockIdx.y * blockDim.y;
 
   // Determine local row and column indices
   auto l_row = threadIdx.x;
@@ -30,25 +31,41 @@ void kernel_body(kernel_arg_t *arg) {
   // Loop over tiles
   for (uint32_t k = 0; k < size; k += tile_size) {
     // Load tile of matrix A & B to local memory
-    local_A[l_row * tile_size + l_col] = A_ptr[g_row * size + (k + l_col)];
-    local_B[l_row * tile_size + l_col] = B_ptr[(k + l_row) * size + g_col];
+    vortex::virgo::dma_load<TYPE>(
+      &A_ptr[g_row * size + k],
+      local_A,
+      tile_size,
+      tile_size,
+      size
+    );
+   
+    vortex::virgo::fence();
 
+    vortex::virgo::dma_load<TYPE>(
+      &B_ptr[k * size + g_col],
+      local_B,
+      tile_size,
+      tile_size,
+      size
+    );
+    
+    vortex::virgo::fence();
     // Synchronize all warps in current group
     vx_printf("warp %d: load tile %d sync\n", vx_warp_id(), k);
-    vx_barrier(0x80000000, vx_num_cores());
+    vx_barrier(1<<31, vx_num_cores());
 
     // Compute partial sum for the local tile
     for (uint32_t j = 0; j < tile_size; ++j) {
       sum += local_A[l_row * tile_size + j] * local_B[j * tile_size + l_col];
     }
+    vx_printf("computed partial sum %f\n", sum);
 
     // Synchronize all warps in current group
     vx_printf("warp %d: load tile %d sync2\n", vx_warp_id(), k);
-    vx_barrier(0x80000000, vx_num_cores());
+    vx_barrier(1<<31, vx_num_cores());
   }
-
   // Store the computed sum into the result matrix C
-  C_ptr[g_row * size + g_col] = sum;
+  C_ptr[(g_row + threadIdx.x) * size + g_col + threadIdx.y] = sum;
 }
 
 int main() {

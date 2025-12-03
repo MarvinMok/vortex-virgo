@@ -701,10 +701,10 @@ int vx_check_occupancy(vx_device_h hdevice, uint32_t group_size, uint32_t* max_l
     return err;
   });
   uint32_t threads_per_core = warps_per_core * threads_per_warp;
-  if (group_size > threads_per_core) {
-    printf("Error: cannot schedule kernel with group_size > threads_per_core (%d,%d)\n", group_size, threads_per_core);
-    return -1;
-  }
+  // if (group_size > threads_per_core) {
+  //   printf("Error: cannot schedule kernel with group_size > threads_per_core (%d,%d)\n", group_size, threads_per_core);
+  //   return -1;
+  // }
 
   // calculate groups occupancy
   int warps_per_group = (group_size + threads_per_warp-1) / threads_per_warp;

@@ -21,6 +21,7 @@
 #include "core.h"
 #include "socket.h"
 #include "constants.h"
+#include "dma.h"
 #include "virgo.h"
 
 namespace vortex {
@@ -50,6 +51,10 @@ public:
 
   ProcessorImpl* processor() const {
     return processor_;
+  }
+
+  const Virgo_DMA::Ptr& dma() const {
+    return dma_;
   }
 
   void reset();
@@ -84,6 +89,7 @@ private:
   std::vector<Socket::Ptr>    sockets_;
   std::vector<CoreMask>       barriers_;
   CacheSim::Ptr               l2cache_;
+  Virgo_DMA::Ptr              dma_;
   uint32_t                    cores_per_socket_;
   LocalMem::Ptr               local_mem_;
   Virgo_MatMul::Ptr           virgo_matmul_;
