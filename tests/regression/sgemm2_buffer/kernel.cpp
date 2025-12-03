@@ -10,40 +10,85 @@ void kernel_body(kernel_arg_t *arg) {
   auto B_ptr = reinterpret_cast<TYPE*>(arg->B_addr);
   auto C_ptr = reinterpret_cast<TYPE*>(arg->C_addr);
 
-  // Allocate local memory for the tile of matrix A & B
-	auto local_ptr = __local_mem(2 * blockDim.x * blockDim.y * sizeof(TYPE));
+  // Allocate local memory for the tile of matrix A & B & C
+	auto local_ptr = __local_mem(3 * blockDim.x * blockDim.y * sizeof(TYPE));
   auto local_A = (TYPE*)local_ptr;
   auto local_B = (TYPE*)local_ptr + blockDim.x * blockDim.y;
+  auto local_C = (TYPE*)local_ptr + 2 * blockDim.x * blockDim.y;
+
 
   auto size = arg->size;
   auto tile_size = arg->tile_size;
 
   // Determine global row and column indices
-  auto g_row = blockIdx.x * blockDim.x + threadIdx.x;
-  auto g_col = blockIdx.y * blockDim.y + threadIdx.y;
+  auto g_row = blockIdx.x * blockDim.x;
+  auto g_col = blockIdx.y * blockDim.y;
 
   // Determine local row and column indices
   auto l_row = threadIdx.x;
   auto l_col = threadIdx.y;
 
+  auto C_ptr_local = &C_ptr[g_row * size + g_col];
+   vortex::virgo::dma_load<TYPE>(
+    C_ptr_local,
+    local_C,
+    tile_size,
+    tile_size,
+    size, 
+    tile_size       
+  );
+  vx_printf("kernel load C fence\n");
+  vortex::virgo::dma_fence(1);
+  vx_barrier(1<<31, vx_num_cores());
+  
   // Loop over tiles
   for (uint32_t k = 0; k < size; k += tile_size) {
     // Load tile of matrix A & B to local memory
     vx_printf("kernel load\n");
-    local_A[l_row * tile_size + l_col] = A_ptr[g_row * size + (k + l_col)];
-    local_B[l_row * tile_size + l_col] = B_ptr[(k + l_row) * size + g_col];
+    vortex::virgo::dma_load<TYPE>(
+      &A_ptr[g_row * size + k],
+      local_A,
+      tile_size,
+      tile_size,
+      size,
+      tile_size
+    );
+
+    vortex::virgo::dma_load<TYPE>(
+      &B_ptr[k * size + g_col],
+      local_B,
+      tile_size,
+      tile_size,
+      size,
+      tile_size
+    );
+    vortex::virgo::dma_fence(2);
     vx_printf("kernel waiting 1\n");
     // Synchronize all warps in current group
     vx_barrier(1<<31, vx_num_cores());
     vx_printf("kernel compute\n");
     // Compute partial sum for the local tile
     vx_printf("localA: %f, localB: %f\n", local_A[l_row * tile_size + l_col], local_B[l_row * tile_size + l_col]);
-    vortex::virgo::compute<float>(local_A, local_B, C_ptr, tile_size, tile_size, tile_size);
+    vortex::virgo::compute<float>(local_A, local_B, local_C, tile_size, tile_size, tile_size);
     vortex::virgo::compute_fence(1);
+
     vx_printf("kernel waiting 2\n");
     // Synchronize all warps in current group
     vx_barrier(1<<31, vx_num_cores());
   }
+  vx_printf("kernel store C\n");
+
+  // Store tile of matrix C from local memory
+  vortex::virgo::dma_load<TYPE>(
+    local_C,
+    C_ptr_local,
+    tile_size,
+    tile_size,
+    tile_size, 
+    size       
+  );
+  vortex::virgo::dma_fence(1);
+  vx_printf("kernel fin\n");
 
 }
 

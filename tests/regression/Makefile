@@ -21,6 +21,9 @@ all:
 	$(MAKE) -C sgemm2
 	$(MAKE) -C madmax
 	$(MAKE) -C stencil3d
+	$(MAKE) -C sgemm2_buffer
+	$(MAKE) -C sgemm2_virgo
+	$(MAKE) -C sgemm_dma
 
 run-simx:
 	$(MAKE) -C basic run-simx
@@ -42,6 +45,9 @@ run-simx:
 	$(MAKE) -C sgemm2 run-simx
 	$(MAKE) -C madmax run-simx
 	$(MAKE) -C stencil3d run-simx
+	$(MAKE) -C sgemm2_buffer run-simx
+	$(MAKE) -C sgemm2_virgo run-simx
+	$(MAKE) -C sgemm_dma run-simx
 
 run-rtlsim:
 	$(MAKE) -C basic run-rtlsim
@@ -84,3 +90,6 @@ clean:
 	$(MAKE) -C sgemm2 clean
 	$(MAKE) -C madmax clean
 	$(MAKE) -C stencil3d clean
+	$(MAKE) -C sgemm2_buffer clean
+	$(MAKE) -C sgemm2_virgo clean
+	$(MAKE) -C sgemm_dma clean

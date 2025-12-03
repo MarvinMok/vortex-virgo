@@ -36,20 +36,20 @@ void kernel_body(kernel_arg_t *arg) {
       local_A,
       tile_size,
       tile_size,
-      size
+      size,
+      tile_size
     );
-   
-    vortex::virgo::fence();
 
     vortex::virgo::dma_load<TYPE>(
       &B_ptr[k * size + g_col],
       local_B,
       tile_size,
       tile_size,
-      size
+      size,
+      tile_size
     );
     
-    vortex::virgo::fence();
+    vortex::virgo::dma_fence(2);
     // Synchronize all warps in current group
     vx_printf("warp %d: load tile %d sync\n", vx_warp_id(), k);
     vx_barrier(1<<31, vx_num_cores());

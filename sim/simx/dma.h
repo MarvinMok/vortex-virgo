@@ -40,7 +40,8 @@ private:
         uint32_t data_type_size;
         uint32_t num_rows;
         uint32_t num_cols;
-        uint32_t row_stride;
+        uint32_t src_stride;
+        uint32_t dst_stride;
     } dma_load_t;
 
     void dma_transfer();

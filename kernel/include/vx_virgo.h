@@ -41,58 +41,78 @@ typedef struct {
     uint32_t data_type_size;
     uint32_t num_rows;
     uint32_t num_cols;
-    uint32_t row_stride;
+    uint32_t src_stride;
+    uint32_t dst_stride;
 } dma_load_t;
 
 
-uint32_t counters[32] = {0};
+uint32_t dma_counters[32] = {0};
 uint32_t dma_tags[32] = {0};
 
 uint32_t compute_counters[32] = {0};
 uint32_t compute_tags[32] = {0};
 
-static __attribute__((always_inline)) uint32_t fence() {
+static __attribute__((always_inline)) uint32_t dma_fence(uint32_t num_ops) {
+    
+    if (num_ops == 0) {
+        return 0;
+    }
+    
     //only one thread needs to read
     vx_tmc_one();
     
     uint32_t local_core_id = vx_core_id(); 
     uint32_t global_warp_id = local_core_id * vx_num_warps() + vx_warp_id();
+
+     if (num_ops > dma_counters[global_warp_id]) {
+        num_ops = dma_counters[global_warp_id];
+    }
     
-    uint32_t* MMIO_READ_ADDR = (uint32_t*)(0x0000F900);
+    volatile uint32_t* MMIO_READ_ADDR = (volatile uint32_t*)(0x0000F900);
     uint32_t hw_counter = *MMIO_READ_ADDR;
     
-    vx_printf("fence core: %d, warp: %d, hw: %d, counter: %d\n", local_core_id, vx_warp_id(), hw_counter, counters[global_warp_id]);
+    vx_printf("fence core: %d, warp: %d, hw: %d, counter: %d\n", local_core_id, vx_warp_id(), hw_counter, dma_counters[global_warp_id]);
     
-    while (counters[global_warp_id] != 0 && counters[global_warp_id] >= hw_counter) {
+    while (dma_counters[global_warp_id] != 0 && hw_counter > dma_counters[global_warp_id] - num_ops) {
         hw_counter = *MMIO_READ_ADDR;
     }
     
-    if (counters[global_warp_id] > 0) {
-        counters[global_warp_id]--;
+    if (dma_counters[global_warp_id] > 0) {
+        dma_counters[global_warp_id]-= num_ops;
     }
     //set all threads active
     vx_tmc(-1);
     
-    return counters[global_warp_id];
+    return dma_counters[global_warp_id];
 }
 
-static __attribute__((always_inline)) uint32_t compute_fence() {
+static __attribute__((always_inline)) uint32_t compute_fence(uint32_t num_ops) {
+    
+    if (num_ops == 0) {
+        return 0;
+    }
+
     //only one thread needs to read
     vx_tmc_one();
     uint32_t local_core_id = vx_core_id(); 
     uint32_t global_warp_id = local_core_id * vx_num_warps() + vx_warp_id();
 
-    uint32_t* MMIO_READ_ADDR = (uint32_t*)(0x0000EC00);
+    if (num_ops > compute_counters[global_warp_id]) {
+        num_ops = compute_counters[global_warp_id];
+    }
+
+    volatile uint32_t* MMIO_READ_ADDR = (volatile uint32_t*)(0x0000EC00);
     uint32_t hw_counter = *MMIO_READ_ADDR;
 
     vx_printf("fence core: %d, warp: %d, hw: %d, counter: %d\n", local_core_id, vx_warp_id(), hw_counter, compute_counters[global_warp_id]);
 
-    while (compute_counters[global_warp_id] != 0 && compute_counters[global_warp_id] >= hw_counter) {
+    while (compute_counters[global_warp_id] != 0 && hw_counter > compute_counters[global_warp_id] - num_ops) {
         hw_counter = *MMIO_READ_ADDR;
     }
 
+    
     if (compute_counters[global_warp_id] > 0) {
-        compute_counters[global_warp_id]--;
+        compute_counters[global_warp_id] -= num_ops;
     }
     //set all threads active
     vx_tmc(-1);
@@ -102,7 +122,7 @@ static __attribute__((always_inline)) uint32_t compute_fence() {
 
 
 template <typename T>
-static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t row_stride) {
+static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t src_stride, uint32_t dst_stride) {
    
     //only one core does the dma load
     vx_tmc_one();
@@ -118,7 +138,8 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
         .data_type_size = sizeof(T),
         .num_rows = num_rows,
         .num_cols = num_cols,
-        .row_stride = row_stride
+        .src_stride = src_stride,
+        .dst_stride = dst_stride
     };
     
     // Calculate offset based on global warp ID to avoid collision in MMIO space if hardware supports it
@@ -127,14 +148,21 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
     
     // vx_printf("dma_load: core=%d warp=%d offset=%d tag=%d\n", core_id, wid, offset, dma_tags[global_warp_id]);
     
-    dma_load_t* MMIO_WRITE_ADDR = (dma_load_t*)(0x0000F800 + offset);
-    uint32_t* MMIO_COMMIT_ADDR = ((uint32_t*)MMIO_WRITE_ADDR) + 6;
-    *(MMIO_WRITE_ADDR) = dma_load;
+    volatile uint32_t* MMIO_WRITE_ADDR = (volatile uint32_t*)(0x0000F800 + offset);
+    MMIO_WRITE_ADDR[0] = dma_load.src_addr;
+    MMIO_WRITE_ADDR[1] = dma_load.dst_addr;
+    MMIO_WRITE_ADDR[2] = dma_load.data_type_size;
+    MMIO_WRITE_ADDR[3] = dma_load.num_rows;
+    MMIO_WRITE_ADDR[4] = dma_load.num_cols;
+    MMIO_WRITE_ADDR[5] = dma_load.src_stride;
+    MMIO_WRITE_ADDR[6] = dma_load.dst_stride;
+    
+    volatile uint32_t* MMIO_COMMIT_ADDR = MMIO_WRITE_ADDR + 7;
     *(MMIO_COMMIT_ADDR) = dma_tags[global_warp_id];
 
     //set all threads active
     dma_tags[global_warp_id] = (dma_tags[global_warp_id] + 1) % 4;
-    counters[global_warp_id]++;
+    dma_counters[global_warp_id]++;
     
     vx_tmc(-1);
 
@@ -172,9 +200,16 @@ static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_add
     }
     
     // start of MMIO_VIRGO addressing E800 is start of MMIO_VIRGO addressing
-    virgo_compute_t* MMIO_VIRGO_WRITE_ADDR = (virgo_compute_t*) (0x0000E800 + global_warp_id * (sizeof(virgo_compute_t) + 4));
-    *(MMIO_VIRGO_WRITE_ADDR) = virgo_compute;
-    uint32_t* MMIO_VIRGO_COMMIT_ADDR = (uint32_t*) (0x0000E800 + global_warp_id * (sizeof(virgo_compute_t) + 4) + sizeof(virgo_compute_t));
+    volatile uint32_t* MMIO_VIRGO_WRITE_ADDR = (volatile uint32_t*) (0x0000E800 + global_warp_id * (sizeof(virgo_compute_t) + 4));
+    MMIO_VIRGO_WRITE_ADDR[0] = virgo_compute.src_addr_A;
+    MMIO_VIRGO_WRITE_ADDR[1] = virgo_compute.src_addr_B;
+    MMIO_VIRGO_WRITE_ADDR[2] = virgo_compute.dst_addr;
+    MMIO_VIRGO_WRITE_ADDR[3] = virgo_compute.data_type;
+    MMIO_VIRGO_WRITE_ADDR[4] = virgo_compute.num_rows_A;
+    MMIO_VIRGO_WRITE_ADDR[5] = virgo_compute.num_cols_A;
+    MMIO_VIRGO_WRITE_ADDR[6] = virgo_compute.num_cols_B;
+
+    volatile uint32_t* MMIO_VIRGO_COMMIT_ADDR = MMIO_VIRGO_WRITE_ADDR + 7;
     *(MMIO_VIRGO_COMMIT_ADDR) = compute_tags[global_warp_id]; // write tag to COMMIT address
 
     compute_tags[global_warp_id] = (compute_tags[global_warp_id] + 1) % 4;
