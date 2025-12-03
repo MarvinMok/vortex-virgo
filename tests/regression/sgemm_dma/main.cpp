@@ -196,15 +196,7 @@ int main(int argc, char *argv[]) {
   // generate source data
   for (uint32_t i = 0; i < size_sq; ++i) {
     h_A[i] = Comparator<TYPE>::generate();
-    float val = h_A[i];
-    uint32_t bits = *reinterpret_cast<uint32_t*>(&val);
-    std::cout << "A[" << i << "] = 0x" 
-              << std::hex << bits << std::dec << std::endl;
     h_B[i] = Comparator<TYPE>::generate();
-    float val2 = h_B[i];
-    uint32_t bits2 = *reinterpret_cast<uint32_t*>(&val2);
-    std::cout << "B[" << i << "] = 0x" 
-              << std::hex << bits2 << std::dec << std::endl;
   }
 
   // upload source buffer0

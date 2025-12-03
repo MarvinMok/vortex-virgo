@@ -23,20 +23,20 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*8)
-    , tag_table(4) // number of max in-flight matmul unit instructions
     , read_register(0)
+    , tag_table(4) // number of max in-flight matmul unit instructions
 {
     
 }
 
 Virgo_MatMul::~Virgo_MatMul() {}
 
-void Virgo_MatMul::read(const void* data, uint64_t addr, uint32_t size) {
+void Virgo_MatMul::read(const void* data, uint64_t /* addr */, uint32_t /* size */) {
     uint32_t* d = (uint32_t*) data;
     *d = read_register;
 }
 
-void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t size) {
+void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
     
     uint32_t* d = (uint32_t*) data;
     uint32_t super_index =((static_cast<uint32_t>(addr) - MMIO_VIRGO_WRITE_ADDR) & 0xFF ) >> 2;
@@ -92,8 +92,8 @@ void Virgo_MatMul::MatMul() {
     auto dst_addr_type = get_addr_type(dst_addr);
     std::cout <<"matmuling" << std::endl;
     if (data_type == FP32) {
-        for (int i = 0; i < num_rows_A; i++) { // loop over rows of matrix A
-            for (int j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B
+        for (uint32_t i = 0; i < num_rows_A; i++) { // loop over rows of matrix A
+            for (uint32_t j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B
                 float sum;
 
                 if (dst_addr_type == AddrType::Shared) {
@@ -102,7 +102,7 @@ void Virgo_MatMul::MatMul() {
                     mmu_.read(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4, 0);
                 }
                 // inner loop: Calculate dot product of row i from A and column j from B
-                for (int k = 0; k < num_cols_A; k++) {
+                for (uint32_t k = 0; k < num_cols_A; k++) {
                     // array[row_index * width + column_index]
                     float aVal;
                     float bVal;

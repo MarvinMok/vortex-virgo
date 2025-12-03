@@ -18,7 +18,7 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
 
 Virgo_DMA::~Virgo_DMA() {}
 
-void Virgo_DMA::read(const void* data,  uint64_t addr, uint32_t size) {
+void Virgo_DMA::read(const void* data,  uint64_t /* addr */, uint32_t /* size */) {
     uint32_t* d = (uint32_t*)data;
     *d = read_registers.at(0);
 }

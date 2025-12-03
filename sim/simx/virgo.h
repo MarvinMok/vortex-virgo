@@ -21,7 +21,7 @@ typedef struct {
     uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
     uint32_t num_cols_A; 
     uint32_t num_cols_B;
-    uint8_t  tag;
+    uint32_t  tag;
 } virgo_queue_t;
 
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
