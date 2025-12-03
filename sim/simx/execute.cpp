@@ -1379,6 +1379,7 @@ instr_trace_t* Emulator::execute(const Instr &instr, uint32_t wid) {
       } break;
       case WctlType::BAR: {
         trace->fetch_stall = true;
+        std::cout << "barrier " << rs1_data.at(thread_last).i << " with count " << rs2_data.at(thread_last).i << std::endl;
         trace->data = std::make_shared<SfuTraceData>(rs1_data[thread_last].i, rs2_data[thread_last].i);
       } break;
       case WctlType::PRED: {

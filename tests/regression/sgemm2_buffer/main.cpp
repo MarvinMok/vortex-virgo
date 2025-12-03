@@ -81,7 +81,7 @@ static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B, uint32_t width, 
         sum += c;
         printf("matmul vals: %f %f %f\n", a, b, sum);
       }
-      out[row * width + col] = sum;
+      out[row * width + col] = sum; //linear 2x activation function
     }
   }
 }
