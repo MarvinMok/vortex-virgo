@@ -22,8 +22,8 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
     , cluster_(cluster)
     , arch_(arch)
-    , write_registers(arch.num_cores()*arch.num_warps()*8)
-    , read_register(0)
+    , write_registers(arch.num_cores()*arch.num_warps()*8, 0)
+    , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
 {
     
@@ -31,15 +31,17 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
 
 Virgo_MatMul::~Virgo_MatMul() {}
 
-void Virgo_MatMul::read(const void* data, uint64_t /* addr */, uint32_t /* size */) {
+void Virgo_MatMul::read(const void* data, uint64_t addr, uint32_t /* size */) {
     uint32_t* d = (uint32_t*) data;
-    *d = read_register;
+    uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_VIRGO_BASE_READ_ADDR)) & 0xFFFF ) >> 2;
+    std::cout << "Virgo read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_VIRGO_BASE_READ_ADDR << ", data " << *d << std::endl;
+    *d = read_registers.at(super_index);
 }
 
 void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
     
     uint32_t* d = (uint32_t*) data;
-    uint32_t super_index =((static_cast<uint32_t>(addr) - MMIO_VIRGO_WRITE_ADDR) & 0xFF ) >> 2;
+    uint32_t super_index =((static_cast<uint32_t>(addr) - (MMIO_VIRGO_WRITE_ADDR)) & 0xFFFF ) >> 2;
     uint32_t index = super_index % 8;
     
     uint32_t warp_id = (super_index / 8) % arch_.num_warps();
@@ -53,7 +55,7 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
         tag_table[tag][global_warp_id] = 1; // set to 1
 
         if (tag_table[tag].count() == 1) {
-            read_register++;
+            read_registers.at(global_warp_id)++;
         }
         
         if (tag_table[tag].count() == arch_.num_warps()*arch_.num_cores()) {
@@ -149,7 +151,9 @@ void Virgo_MatMul::MatMul() {
         // }
     }
 
-    read_register--;
+    for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+        read_registers.at(i)--;
+    }
 }
 
 void Virgo_MatMul::attach_ram(RAM* ram) {

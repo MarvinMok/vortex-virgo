@@ -9,8 +9,8 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     : SimObject(ctx, StrFormat("virgo_dma%d", cluster->id()))
     , cluster_(cluster)
     , arch_(arch)
-    , write_registers(256, 0)  
-    , read_registers(1, 0) 
+    , write_registers(arch.num_cores()*arch.num_warps()*8, 0)  
+    , read_registers(arch.num_cores()*arch.num_warps(), 0) 
     , tag_table(4)
 {
     
@@ -18,24 +18,28 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
 
 Virgo_DMA::~Virgo_DMA() {}
 
-void Virgo_DMA::read(const void* data,  uint64_t /* addr */, uint32_t /* size */) {
+void Virgo_DMA::read(const void* data,  uint64_t addr, uint32_t /* size */) {
     uint32_t* d = (uint32_t*)data;
-    *d = read_registers.at(0);
+    uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_BASE_READ_ADDR)) & 0xFFFF ) >> 2;
+    std::cout << "DMA read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_BASE_READ_ADDR << ", data " << *d << std::endl;
+    if (super_index >= read_registers.size()) {
+        std::cout << "Error: read super_index " << super_index << " is out of bounds (max " << read_registers.size() << ")" << std::endl;
+        std::abort();
+    }
+    *d = read_registers.at(super_index);
 }
 
 void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
     uint32_t* d = (uint32_t*)data;
-    uint32_t super_index = ((static_cast<uint32_t>(addr) - MMIO_WRITE_ADDR) & 0xFFF ) >> 2;
+    uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_WRITE_ADDR)) & 0xFFFF ) >> 2;
     uint32_t index = super_index % 8;
     uint32_t warp_id = (super_index / 8) % arch_.num_warps();
     uint32_t core_id = (super_index / 8) / arch_.num_warps();
     uint32_t global_warp_id = core_id * arch_.num_warps() + warp_id;
-    std::cout << "DMA write to index " << index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_WRITE_ADDR << ", data " << *d << std::endl;
+    std::cout << "DMA write to index " << index << " warp " << warp_id << " core " << core_id << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_WRITE_ADDR << ", data " << *d << std::endl;
     write_registers.at(global_warp_id * 8 + index) = *d;
     if (index == 7) {
-        if (tag_table.at(*d).count() == 0) {
-            read_registers.at(0)++;
-        }
+        read_registers.at(global_warp_id)++;
         tag_table.at(*d).set(global_warp_id);
         if (tag_table.at(*d).count() == arch_.num_warps() * arch_.num_cores()) {
             std::cout << "Begin DMA transfer" << std::endl;
@@ -76,7 +80,9 @@ void Virgo_DMA::dma_transfer(){
             data_transfer(src_addr, dst_addr, dma_load.data_type_size, src_addr_type, dst_addr_type);
         }
     }
-    read_registers.at(0)--;
+    for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+        read_registers.at(i)--;
+    }
 }
 
 void Virgo_DMA::data_transfer(uint64_t src_addr, uint64_t dst_addr, uint32_t data_type_size, AddrType src_addr_type, AddrType dst_addr_type) {
@@ -114,7 +120,9 @@ void Virgo_DMA::attach_ram(RAM* ram) {
 }
 
 void Virgo_DMA::reset() {
-    read_registers.at(0) = 0;
+    for (uint32_t i = 0; i < read_registers.size(); i++) {
+        read_registers.at(i) = 0;
+    }
     for (uint32_t i = 0; i < write_registers.size(); i++) {
         write_registers.at(i) = 0;
     }

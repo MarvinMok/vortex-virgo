@@ -40,7 +40,6 @@ void kernel_body(kernel_arg_t *arg) {
   );
 
   vortex::virgo::dma_fence(1);
-  vx_barrier(1<<31, vx_num_cores());
   //load A and B
   vortex::virgo::dma_load<TYPE>(
       &A_ptr[g_row * size],

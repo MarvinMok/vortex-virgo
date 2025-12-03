@@ -68,13 +68,14 @@ static __attribute__((always_inline)) uint32_t dma_fence(uint32_t num_ops) {
         num_ops = dma_counters[global_warp_id];
     }
     
-    volatile uint32_t* MMIO_READ_ADDR = (volatile uint32_t*)(0x0000F900);
-    uint32_t hw_counter = *MMIO_READ_ADDR;
+    
+    volatile uint32_t* MMIO_BASE_READ_ADDR = (volatile uint32_t*)(0x0000F900);
+    volatile uint32_t hw_counter = *(MMIO_BASE_READ_ADDR + global_warp_id);
     
     vx_printf("dma fence core: %d, warp: %d, hw: %d, counter: %d, num_ops: %d\n", local_core_id, vx_warp_id(), hw_counter, dma_counters[global_warp_id], num_ops);
     
     while (dma_counters[global_warp_id] != 0 && hw_counter > dma_counters[global_warp_id] - num_ops) {
-        hw_counter = *MMIO_READ_ADDR;
+        hw_counter = *(MMIO_BASE_READ_ADDR + global_warp_id);
     }
     
     if (dma_counters[global_warp_id] > 0) {
@@ -101,13 +102,13 @@ static __attribute__((always_inline)) uint32_t compute_fence(uint32_t num_ops) {
         num_ops = compute_counters[global_warp_id];
     }
 
-    volatile uint32_t* MMIO_READ_ADDR = (volatile uint32_t*)(0x0000EC00);
-    uint32_t hw_counter = *MMIO_READ_ADDR;
+    volatile uint32_t* MMIO_BASE_READ_ADDR = (volatile uint32_t*)(0x0000E900);
+    volatile uint32_t hw_counter = *(MMIO_BASE_READ_ADDR + global_warp_id);
 
     vx_printf("compute fence core: %d, warp: %d, hw: %d, counter: %d, num_ops: %d\n", local_core_id, vx_warp_id(), hw_counter, compute_counters[global_warp_id], num_ops);
 
     while (compute_counters[global_warp_id] != 0 && hw_counter > compute_counters[global_warp_id] - num_ops) {
-        hw_counter = *MMIO_READ_ADDR;
+        hw_counter = *(MMIO_BASE_READ_ADDR + global_warp_id);
     }
 
     

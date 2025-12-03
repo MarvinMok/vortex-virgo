@@ -48,7 +48,7 @@ private:
     Cluster* cluster_;
     Arch arch_;
     std::vector<uint32_t> write_registers;
-    uint8_t read_register;
+    std::vector<uint32_t> read_registers;
     std::vector<std::bitset<32>> tag_table;
     std::queue<virgo_queue_t> virgo_compute_queue_;
     MemoryUnit mmu_;
