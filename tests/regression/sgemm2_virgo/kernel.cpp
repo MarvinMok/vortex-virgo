@@ -14,6 +14,7 @@ void kernel_body(kernel_arg_t *arg) {
 	auto local_ptr = __local_mem(2 * blockDim.x * blockDim.y * sizeof(TYPE));
   auto local_A = (TYPE*)local_ptr;
   auto local_B = (TYPE*)local_ptr + blockDim.x * blockDim.y;
+  uint32_t accum_C = (0x10000);
 
   auto size = arg->size;
   auto tile_size = arg->tile_size;
@@ -38,7 +39,7 @@ void kernel_body(kernel_arg_t *arg) {
     vx_printf("kernel compute\n");
     // Compute partial sum for the local tile
     vx_printf("localA: %f, localB: %f\n", local_A[l_row * tile_size + l_col], local_B[l_row * tile_size + l_col]);
-    vortex::virgo::compute<float>(local_A, local_B, C_ptr, tile_size, tile_size, tile_size);
+    vortex::virgo::compute<float>(local_A, local_B, C_ptr, accum_C, tile_size, tile_size, tile_size);
     vortex::virgo::compute_fence(1);
     vx_printf("kernel waiting 2\n");
     // Synchronize all warps in current group

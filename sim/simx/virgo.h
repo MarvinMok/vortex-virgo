@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <mem.h>
 #include <simobject.h>
 #include "arch.h"
@@ -21,7 +22,10 @@ typedef struct {
     uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
     uint32_t num_cols_A; 
     uint32_t num_cols_B;
+    uint32_t accum_addr;
     uint32_t  tag;
+    bool store;
+    bool accum;
 } virgo_queue_t;
 
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
@@ -52,7 +56,8 @@ private:
     std::vector<std::bitset<32>> tag_table;
     std::queue<virgo_queue_t> virgo_compute_queue_;
     MemoryUnit mmu_;
-    
+    std::vector<uint8_t> accum_mem_;
+    std::vector<uint8_t> scratchpad_mem_;
 };
 
 }

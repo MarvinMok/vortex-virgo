@@ -17,7 +17,7 @@ void kernel_body(kernel_arg_t *arg) {
   auto local_A_1 = (TYPE*)local_ptr + 2 * blockDim.x * blockDim.y;
   auto local_B_1 = (TYPE*)local_ptr + 3 * blockDim.x * blockDim.y;
   auto local_C = (TYPE*)local_ptr + 4 * blockDim.x * blockDim.y;
-
+  uint32_t accum_C = 12345;
   auto size = arg->size;
   auto tile_size = arg->tile_size;
 
@@ -58,7 +58,7 @@ void kernel_body(kernel_arg_t *arg) {
       size,
       tile_size
     );
-  vx_printf("kernel gemm start\n");
+  vx_printf("kernel gemm start %d\n", tile_size);
 
   
   // Loop over tiles
@@ -73,18 +73,24 @@ void kernel_body(kernel_arg_t *arg) {
     auto local_B_p = (k >> 2) & 1 ? local_B_0 : local_B_1;
     auto local_A_c = (k >> 2) & 1 ? local_A_1 : local_A_0;
     auto local_B_c = (k >> 2) & 1 ? local_B_1 : local_B_0;
+    bool accum = (k != 0);
+    bool store = (k + tile_size >= size);
 
-
+    // pack accumulator address, accum, and store flags together
+    // store flags tells us whether to write back to memory or not
+    // accum flag tells us whether to add to value in accumulator memory, or to simply just store
+    // basically, store = 1 on last compute call for an output tile, and accum = 1 at the start of a new compuete call for an output tile
+    // idk why but for some reason doing this inside vx_virgo made it break... i think its a compiler error or smtg
+    uint32_t accum_packed = (accum_C & 0x7FFF) | (accum << 31) | (store << 30);
     //compute this tile
-    vortex::virgo::compute<float>(local_A_c, local_B_c, local_C, tile_size, tile_size, tile_size);
-    
+    vortex::virgo::compute<float>(local_A_c, local_B_c, local_C, accum_packed, tile_size, tile_size, tile_size);
     if (k + tile_size < size) {
       // Load tile of matrix A & B to local memory
       vortex::virgo::dma_load<TYPE>(
         &A_ptr[g_row * size + k + tile_size],
         local_A_p,
         tile_size,
-        tile_size,
+        tile_size, 
         size,
         tile_size
       );
@@ -101,6 +107,7 @@ void kernel_body(kernel_arg_t *arg) {
    
     vx_printf("compute fence %d\n", k);
     vortex::virgo::compute_fence(1);
+    vx_printf("here2\n");
     
   }
 

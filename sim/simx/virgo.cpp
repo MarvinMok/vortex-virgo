@@ -22,9 +22,11 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
     , cluster_(cluster)
     , arch_(arch)
-    , write_registers(arch.num_cores()*arch.num_warps()*8, 0)
+    , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
     , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
+    , accum_mem_(1 << LMEM_LOG_SIZE)
+    , scratchpad_mem_(512)
 {
     
 }
@@ -42,32 +44,38 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
     
     uint32_t* d = (uint32_t*) data;
     uint32_t super_index =((static_cast<uint32_t>(addr) - (MMIO_VIRGO_WRITE_ADDR)) & 0xFFFF ) >> 2;
-    uint32_t index = super_index % 8;
+    uint32_t index = super_index % 9;
     
-    uint32_t warp_id = (super_index / 8) % arch_.num_warps();
-    uint32_t core_id = (super_index / 8) / arch_.num_warps();
+    uint32_t warp_id = (super_index / 9) % arch_.num_warps();
+    uint32_t core_id = (super_index / 9) / arch_.num_warps();
     uint32_t global_warp_id = core_id * arch_.num_warps() + warp_id;
     std::cout << "writing super_index " << super_index << " index " << index << " warp id " << warp_id << " core id " << core_id << std::endl;
-    write_registers.at(global_warp_id * 8 + index) = *d;
+    write_registers.at(global_warp_id * 9 + index) = *d;
     
-    if (index == 7) { // 7 index == 8th thing (commit address, tag)
-        uint32_t tag = write_registers.at(global_warp_id * 8 + 7);
+    if (index == 8) { // 8 index == 9th thing (commit address, tag)
+        uint32_t tag = write_registers.at(global_warp_id * 9 + 8);
         tag_table[tag][global_warp_id] = 1; // set to 1
-
-        if (tag_table[tag].count() == 1) {
-            read_registers.at(global_warp_id)++;
-        }
+        read_registers.at(global_warp_id)++;
         
         if (tag_table[tag].count() == arch_.num_warps()*arch_.num_cores()) {
+
+            //unpack accum
+            uint32_t accum_addr = write_registers.at(global_warp_id * 9 + 7);
+            bool accum = (accum_addr >> 31) & 1;
+            bool store = (accum_addr >> 30) & 1;
+            accum_addr = accum_addr & 0x7FFF;
             virgo_queue_t virgo_compute = {
-                .src_addr_A = write_registers.at(global_warp_id * 8 + 0),
-                .src_addr_B = write_registers.at(global_warp_id * 8 + 1),
-                .dst_addr = write_registers.at(global_warp_id * 8 + 2),
-                .data_type = write_registers.at(global_warp_id * 8 + 3),
-                .num_rows_A = write_registers.at(global_warp_id * 8 + 4),
-                .num_cols_A = write_registers.at(global_warp_id * 8 + 5),
-                .num_cols_B = write_registers.at(global_warp_id * 8 + 6),
+                .src_addr_A = write_registers.at(global_warp_id * 9 + 0),
+                .src_addr_B = write_registers.at(global_warp_id * 9 + 1),
+                .dst_addr = write_registers.at(global_warp_id * 9 + 2),
+                .data_type = write_registers.at(global_warp_id * 9 + 3),
+                .num_rows_A = write_registers.at(global_warp_id * 9 + 4),
+                .num_cols_A = write_registers.at(global_warp_id * 9 + 5),
+                .num_cols_B = write_registers.at(global_warp_id * 9 + 6),
+                .accum_addr = accum_addr,
                 .tag = tag,
+                .store = store,
+                .accum = accum
             };
 
             tag_table.at(tag).reset();
@@ -96,12 +104,15 @@ void Virgo_MatMul::MatMul() {
     if (data_type == FP32) {
         for (uint32_t i = 0; i < num_rows_A; i++) { // loop over rows of matrix A
             for (uint32_t j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B
-                float sum;
-
-                if (dst_addr_type == AddrType::Shared) {
-                    cluster_->local_mem()->read(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4);
-                } else {
-                    mmu_.read(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4, 0);
+                float sum = 0;
+                if (virgo_compute.accum) {
+                    // Use memcpy to avoid strict aliasing violation
+                    uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
+                    if (offset + 4 <= accum_mem_.size()) {
+                        memcpy(&sum, &accum_mem_[offset], 4);
+                    } else {
+                        std::cout << "Error: Accumulator memory read out of bounds at offset " << offset << std::endl;
+                    }
                 }
                 // inner loop: Calculate dot product of row i from A and column j from B
                 for (uint32_t k = 0; k < num_cols_A; k++) {
@@ -113,11 +124,25 @@ void Virgo_MatMul::MatMul() {
                     } else {
                         mmu_.read(static_cast<void*>(&aVal), static_cast<uint64_t>(src_addr_A + (i * num_cols_A + k) * 4), 4, 0);
                     }
+                    // Write A to scratchpad
+                    uint32_t offset_A = virgo_compute.tag * 128 + (i * num_cols_A + k) * 4;
+                    if (offset_A + 4 <= scratchpad_mem_.size()) {
+                        memcpy(&scratchpad_mem_[offset_A], &aVal, 4);
+                    } else {
+                        std::cout << "Error: Scratchpad memory write A out of bounds at offset " << offset_A << std::endl;
+                    }
 
                     if (src_addr_B_type == AddrType::Shared) {
                         cluster_->local_mem()->read(static_cast<void*>(&bVal), static_cast<uint64_t>(src_addr_B + (k * num_cols_B + j) * 4), 4);
                     } else {
                         mmu_.read(static_cast<void*>(&bVal), static_cast<uint64_t>(src_addr_B + (k * num_cols_B + j) * 4), 4, 0);
+                    }
+                    // Write B to scratchpad
+                    uint32_t offset_B = virgo_compute.tag * 128 + 64 + (k * num_cols_B + j) * 4;
+                    if (offset_B + 4 <= scratchpad_mem_.size()) {
+                        memcpy(&scratchpad_mem_[offset_B], &bVal, 4);
+                    } else {
+                        std::cout << "Error: Scratchpad memory write B out of bounds at offset " << offset_B << std::endl;
                     }
                     //  = src_addr_A[i * num_cols_A + k]; 
                     //  = src_addr_B[k * num_cols_B + j];   
@@ -126,11 +151,20 @@ void Virgo_MatMul::MatMul() {
                 }
                 // Store result in destination matrix C
                 // dest_addr[i * num_cols_B + j] = sum;
-                std::cout << "matmul res: " << sum << std::endl;
-                if (dst_addr_type == AddrType::Shared) {
-                    cluster_->local_mem()->write(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4);
+                // Store result back to accumulator memory
+                uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
+                if (offset + 4 <= accum_mem_.size()) {
+                    memcpy(&accum_mem_[offset], &sum, 4);
                 } else {
-                    mmu_.write(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4, 0);
+                    std::cout << "Error: Accumulator memory write out of bounds at offset " << offset << std::endl;
+                }
+
+                if (virgo_compute.store) {
+                    if (dst_addr_type == AddrType::Shared) {
+                        cluster_->local_mem()->write(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4);
+                    } else {
+                        mmu_.write(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4, 0);
+                    }
                 }
             }
         }

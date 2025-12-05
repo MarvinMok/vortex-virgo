@@ -33,6 +33,7 @@ typedef struct {
     uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
     uint32_t num_cols_A; 
     uint32_t num_cols_B;
+    uint32_t accum_packed;
 } virgo_compute_t;
 
 typedef struct {
@@ -52,19 +53,18 @@ uint32_t dma_tags[32] = {0};
 uint32_t compute_counters[32] = {0};
 uint32_t compute_tags[32] = {0};
 
-static __attribute__((always_inline)) uint32_t dma_fence(uint32_t num_ops) {
-    
-    if (num_ops == 0) {
-        return 0;
-    }
+static __attribute__((always_inline)) void dma_fence(uint32_t num_ops) {
     
     //only one thread needs to read
     vx_tmc_one();
-    
+    if (num_ops == 0) {
+        vx_tmc(-1);
+        return;
+    }
     uint32_t local_core_id = vx_core_id(); 
     uint32_t global_warp_id = local_core_id * vx_num_warps() + vx_warp_id();
 
-     if (num_ops > dma_counters[global_warp_id]) {
+    if (num_ops > dma_counters[global_warp_id]) {
         num_ops = dma_counters[global_warp_id];
     }
     
@@ -83,18 +83,18 @@ static __attribute__((always_inline)) uint32_t dma_fence(uint32_t num_ops) {
     }
     //set all threads active
     vx_tmc(-1);
-    
-    return dma_counters[global_warp_id];
+
 }
 
-static __attribute__((always_inline)) uint32_t compute_fence(uint32_t num_ops) {
-    
-    if (num_ops == 0) {
-        return 0;
-    }
+static __attribute__((always_inline)) void compute_fence(uint32_t num_ops) {
 
     //only one thread needs to read
     vx_tmc_one();
+
+    if (num_ops == 0) {
+        vx_tmc(-1);
+        return;
+    }
     uint32_t local_core_id = vx_core_id(); 
     uint32_t global_warp_id = local_core_id * vx_num_warps() + vx_warp_id();
 
@@ -115,15 +115,15 @@ static __attribute__((always_inline)) uint32_t compute_fence(uint32_t num_ops) {
     if (compute_counters[global_warp_id] > 0) {
         compute_counters[global_warp_id] -= num_ops;
     }
+    vx_printf("here\n");
     //set all threads active
     vx_tmc(-1);
 
-    return compute_counters[global_warp_id];
 }
 
 
 template <typename T>
-static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t src_stride, uint32_t dst_stride) {
+static __attribute__((always_inline)) void dma_load(T* src_addr, T* dst_addr, uint32_t num_rows, uint32_t num_cols, uint32_t src_stride, uint32_t dst_stride) {
    
     //only one core does the dma load
     vx_tmc_one();
@@ -166,12 +166,10 @@ static __attribute__((always_inline)) uint32_t dma_load(T* src_addr, T* dst_addr
     dma_counters[global_warp_id]++;
     
     vx_tmc(-1);
-
-    return 0;
 }
 
 template <typename T>
-static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_addr_B, T* dst_addr, uint32_t num_rows_A, uint32_t num_cols_A, uint32_t num_cols_B) {
+static __attribute__((always_inline)) void compute(T* src_addr_A, T* src_addr_B, T* dst_addr, uint32_t accum_addr, uint32_t num_rows_A, uint32_t num_cols_A, uint32_t num_cols_B) {
    
     //only one thread per warp
     vx_tmc_one();
@@ -181,6 +179,7 @@ static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_add
     uint32_t num_cores = vx_num_cores(); // Total cores in the cluster/processor context
     uint32_t global_warp_id = core_id * vx_num_warps() + wid;
 
+    
     virgo_compute_t virgo_compute;
     if (std::is_same_v<T, float>) {
         virgo_compute.src_addr_A = reinterpret_cast<uint32_t>(src_addr_A);
@@ -209,16 +208,17 @@ static __attribute__((always_inline)) uint32_t compute(T* src_addr_A, T* src_add
     MMIO_VIRGO_WRITE_ADDR[4] = virgo_compute.num_rows_A;
     MMIO_VIRGO_WRITE_ADDR[5] = virgo_compute.num_cols_A;
     MMIO_VIRGO_WRITE_ADDR[6] = virgo_compute.num_cols_B;
+    MMIO_VIRGO_WRITE_ADDR[7] = accum_addr;
 
-    volatile uint32_t* MMIO_VIRGO_COMMIT_ADDR = MMIO_VIRGO_WRITE_ADDR + 7;
+    volatile uint32_t* MMIO_VIRGO_COMMIT_ADDR = MMIO_VIRGO_WRITE_ADDR + 8;
     *(MMIO_VIRGO_COMMIT_ADDR) = compute_tags[global_warp_id]; // write tag to COMMIT address
 
     compute_tags[global_warp_id] = (compute_tags[global_warp_id] + 1) % 4;
+    compute_counters[global_warp_id]++;
 
     //set all threads active
     vx_tmc(-1);
 
-    return 0;
 }
 
 } // namespace virgo
