@@ -16,6 +16,60 @@
 
 using namespace vortex;
 
+AccumulatorMem::AccumulatorMem(const SimContext& ctx, const char* name, uint64_t capacity)
+    : SimObject(ctx, name)
+    , ram_(capacity)
+    , mmu_(0)
+    , capacity_(capacity) {
+    mmu_.attach(ram_, 0, capacity - 1);
+}
+
+AccumulatorMem::~AccumulatorMem() {}
+
+void AccumulatorMem::read(void* data, uint64_t addr, uint32_t size) {
+    mmu_.read(data, addr, size, 0);
+}
+
+void AccumulatorMem::write(const void* data, uint64_t addr, uint32_t size) {
+    mmu_.write(data, addr, size, 0);
+}
+
+void AccumulatorMem::tick() {}
+void AccumulatorMem::reset() {
+    for (uint64_t i = 0; i < ram_.size(); i += 4) {
+        uint32_t zero = 0;
+        ram_.write(&zero, i, 4);
+    }
+}
+uint64_t AccumulatorMem::size() const { return capacity_; }
+
+ScratchPadMem::ScratchPadMem(const SimContext& ctx, const char* name, uint64_t capacity)
+    : SimObject(ctx, name)
+    , ram_(capacity)
+    , mmu_(0)
+    , capacity_(capacity) {
+    mmu_.attach(ram_, 0, capacity - 1);
+}
+
+ScratchPadMem::~ScratchPadMem() {}
+
+void ScratchPadMem::read(void* data, uint64_t addr, uint32_t size) {
+    mmu_.read(data, addr, size, 0);
+}
+
+void ScratchPadMem::write(const void* data, uint64_t addr, uint32_t size) {
+    mmu_.write(data, addr, size, 0);
+}
+
+void ScratchPadMem::tick() {}
+void ScratchPadMem::reset() {
+    for (uint64_t i = 0; i < ram_.size(); i += 4) {
+        uint32_t zero = 0;
+        ram_.write(&zero, i, 4);
+    }
+}
+uint64_t ScratchPadMem::size() const { return capacity_; }
+
 Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
@@ -25,8 +79,8 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
     , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
-    , accum_mem_(1 << LMEM_LOG_SIZE)
-    , scratchpad_mem_(512)
+    , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
+    , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 512)
 {
     
 }
@@ -109,7 +163,7 @@ void Virgo_MatMul::MatMul() {
                     // Use memcpy to avoid strict aliasing violation
                     uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
                     if (offset + 4 <= accum_mem_.size()) {
-                        memcpy(&sum, &accum_mem_[offset], 4);
+                        accum_mem_.read(&sum, offset, 4);
                     } else {
                         std::cout << "Error: Accumulator memory read out of bounds at offset " << offset << std::endl;
                     }
@@ -127,7 +181,7 @@ void Virgo_MatMul::MatMul() {
                     // Write A to scratchpad
                     uint32_t offset_A = virgo_compute.tag * 128 + (i * num_cols_A + k) * 4;
                     if (offset_A + 4 <= scratchpad_mem_.size()) {
-                        memcpy(&scratchpad_mem_[offset_A], &aVal, 4);
+                        scratchpad_mem_.write(&aVal, offset_A, 4);
                     } else {
                         std::cout << "Error: Scratchpad memory write A out of bounds at offset " << offset_A << std::endl;
                     }
@@ -140,7 +194,7 @@ void Virgo_MatMul::MatMul() {
                     // Write B to scratchpad
                     uint32_t offset_B = virgo_compute.tag * 128 + 64 + (k * num_cols_B + j) * 4;
                     if (offset_B + 4 <= scratchpad_mem_.size()) {
-                        memcpy(&scratchpad_mem_[offset_B], &bVal, 4);
+                        scratchpad_mem_.write(&bVal, offset_B, 4);
                     } else {
                         std::cout << "Error: Scratchpad memory write B out of bounds at offset " << offset_B << std::endl;
                     }
@@ -154,7 +208,7 @@ void Virgo_MatMul::MatMul() {
                 // Store result back to accumulator memory
                 uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
                 if (offset + 4 <= accum_mem_.size()) {
-                    memcpy(&accum_mem_[offset], &sum, 4);
+                    accum_mem_.write(&sum, offset, 4);
                 } else {
                     std::cout << "Error: Accumulator memory write out of bounds at offset " << offset << std::endl;
                 }

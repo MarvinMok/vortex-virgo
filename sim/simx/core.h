@@ -150,6 +150,18 @@ public:
     return lmem_arb_;
   }
 
+  const LsuArbiter::Ptr& mmio_read_arb() const {
+    return mmio_read_arb_;
+  }
+
+  const LsuArbiter::Ptr& mmio_write_arb() const {
+    return mmio_write_arb_;
+  }
+
+  const LocalMemSwitch::Ptr& lmem_switch(uint32_t b) const {
+    return lmem_switch_.at(b);
+  }
+
   const MemCoalescer::Ptr& mem_coalescer(uint32_t idx) const {
     return mem_coalescers_.at(idx);
   }
@@ -214,6 +226,8 @@ private:
   std::vector<LocalMemSwitch::Ptr> lmem_switch_;
   std::vector<MemCoalescer::Ptr> mem_coalescers_;
   LsuArbiter::Ptr lmem_arb_;
+  LsuArbiter::Ptr mmio_read_arb_;
+  LsuArbiter::Ptr mmio_write_arb_;
 
   PipelineLatch fetch_latch_;
   PipelineLatch decode_latch_;

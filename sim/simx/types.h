@@ -1589,8 +1589,11 @@ public:
   SimPort<LsuReq> ReqLmem;
   SimPort<LsuRsp> RspLmem;
 
-  SimPort<LsuReq> ReqMMIO;
-  SimPort<LsuRsp> RspMMIO;
+  SimPort<LsuReq> ReqMMIORead;
+  SimPort<LsuRsp> RspMMIORead;
+
+  SimPort<LsuReq> ReqMMIOWrite;
+  SimPort<LsuRsp> RspMMIOWrite;
 
   SimPort<LsuReq> ReqDC;
   SimPort<LsuRsp> RspDC;

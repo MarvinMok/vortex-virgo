@@ -114,6 +114,31 @@ Cluster::Cluster(const SimContext& ctx,
     local_mem_->Outputs.at(i).bind(&lsu_lmem_adapter->RspOut.at(i));
   }
 
+  // Create MMIO Read Arbiter
+  snprintf(sname, 100, "%s-mmio_read_arb", this->name().c_str());
+  auto mmio_read_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
+
+  // Create MMIO Write Arbiter
+  snprintf(sname, 100, "%s-mmio_write_arb", this->name().c_str());
+  auto mmio_write_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
+
+  // Connect Sockets to MMIO Arbiters
+  for (uint32_t i = 0; i < NUM_SOCKETS; ++i) {
+      // Assuming 1 core per socket as per plan
+      auto& core = sockets_.at(i)->cores(0);
+      core->mmio_read_arb()->ReqOut.at(0).bind(&mmio_read_arb->ReqIn.at(i));
+      mmio_read_arb->RspIn.at(i).bind(&core->mmio_read_arb()->RspOut.at(0));
+
+      core->mmio_write_arb()->ReqOut.at(0).bind(&mmio_write_arb->ReqIn.at(i));
+      mmio_write_arb->RspIn.at(i).bind(&core->mmio_write_arb()->RspOut.at(0));
+  }
+
+  // Connect MMIO Arbiters to DMA
+  mmio_read_arb->ReqOut.at(0).bind(&dma_->ReadReqIn);
+  dma_->ReadRspIn.bind(&mmio_read_arb->RspOut.at(0));
+
+  mmio_write_arb->ReqOut.at(0).bind(&dma_->WriteReqIn);
+  dma_->WriteRspIn.bind(&mmio_write_arb->RspOut.at(0));
 }
 
 Cluster::~Cluster() {

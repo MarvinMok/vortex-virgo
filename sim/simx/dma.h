@@ -24,8 +24,14 @@ public:
               const Arch &arch,
               Cluster* cluster);
     ~Virgo_DMA();
+    
+    SimPort<LsuReq> ReadReqIn;
+    SimPort<LsuRsp> ReadRspIn;
 
-    void read(const void* data, uint64_t addr, uint32_t size);
+    SimPort<LsuReq> WriteReqIn;
+    SimPort<LsuRsp> WriteRspIn;
+
+    void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
 
     void attach_ram(RAM* ram);

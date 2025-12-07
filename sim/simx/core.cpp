@@ -96,6 +96,14 @@ Core::Core(const SimContext& ctx,
   snprintf(sname, 100, "%s-lmem_arb", this->name().c_str());
   lmem_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
 
+  // create mmio read arbiter
+  snprintf(sname, 100, "%s-mmio_read_arb", this->name().c_str());
+  mmio_read_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
+
+  // create mmio write arbiter
+  snprintf(sname, 100, "%s-mmio_write_arb", this->name().c_str());
+  mmio_write_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
+
   // connect lmem switch
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
     // bind ReqDC port (output from lmem switch) to input port ReqIn of mem_coalescer
@@ -105,6 +113,13 @@ Core::Core(const SimContext& ctx,
 
     mem_coalescers_.at(b)->RspIn.bind(&lmem_switch_.at(b)->RspDC);
     lmem_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspLmem);
+
+    // Connect MMIO ports to Core-level MMIO arbiters
+    lmem_switch_.at(b)->ReqMMIORead.bind(&mmio_read_arb_->ReqIn.at(b));
+    mmio_read_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspMMIORead);
+
+    lmem_switch_.at(b)->ReqMMIOWrite.bind(&mmio_write_arb_->ReqIn.at(b));
+    mmio_write_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspMMIOWrite);
   }
 
   // connect lmem arbiter

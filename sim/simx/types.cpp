@@ -24,8 +24,10 @@ LocalMemSwitch::LocalMemSwitch(
   , RspIn(this)
   , ReqLmem(this)
   , RspLmem(this)
-  , ReqMMIO(this)
-  , RspMMIO(this)
+  , ReqMMIORead(this)
+  , RspMMIORead(this)
+  , ReqMMIOWrite(this)
+  , RspMMIOWrite(this)
   , ReqDC(this)
   , RspDC(this)
   , delay_(delay)
@@ -47,6 +49,20 @@ void LocalMemSwitch::tick() {
     RspIn.push(out_rsp, 1);
     RspDC.pop();
   }
+  if (!RspMMIORead.empty()) {
+    auto& out_rsp = RspMMIORead.front();
+    std::cout << "LmemSwitch: Pop MMIO Read Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
+    DT(4, this->name() << "-mmio-read-rsp: " << out_rsp);
+    RspIn.push(out_rsp, 1);
+    RspMMIORead.pop();
+  }
+  if (!RspMMIOWrite.empty()) {
+    auto& out_rsp = RspMMIOWrite.front();
+    std::cout << "LmemSwitch: Pop MMIO Write Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
+    DT(4, this->name() << "-mmio-write-rsp: " << out_rsp);
+    RspIn.push(out_rsp, 1);
+    RspMMIOWrite.pop();
+  }
 
   // process incoming requests
   if (!ReqIn.empty()) {
@@ -59,19 +75,22 @@ void LocalMemSwitch::tick() {
     out_dc_req.uuid  = in_req.uuid;
 
     LsuReq out_lmem_req(out_dc_req);
+    LsuReq out_mmio_req(out_dc_req);
     LsuRsp out_mmio_rsp(in_req.mask.size());
-    bool has_mmio = false;
 
+    bool has_mmio = false;
     for (uint32_t i = 0; i < in_req.mask.size(); ++i) {
       if (in_req.mask.test(i)) {
         auto type = get_addr_type(in_req.addrs.at(i));
         if (type == AddrType::Shared) {
           out_lmem_req.mask.set(i);
           out_lmem_req.addrs.at(i) = in_req.addrs.at(i);
-        } else if (type == AddrType::MMIO) {
+        } else if (type == AddrType::MMIO || type == AddrType::MMIO_VIRGO) {
+          out_mmio_req.mask.set(i);
           out_mmio_rsp.mask.set(i);
+          out_mmio_req.addrs.at(i) = in_req.addrs.at(i);
           has_mmio = true;
-          std::cout << "MMIO LocalMemReq at 0x" << std::hex << in_req.addrs.at(i) << std::endl;
+          DT(4, "MMIO LocalMemReq at 0x" << std::hex << in_req.addrs.at(i));
         } else {
           out_dc_req.mask.set(i);
           out_dc_req.addrs.at(i) = in_req.addrs.at(i);
@@ -89,7 +108,17 @@ void LocalMemSwitch::tick() {
       DT(4, this->name() << "-lmem-req: " << out_lmem_req);
     }
 
-    //send dummy response to LSU for now
+    // if (!out_mmio_req.mask.none()) {
+    //   if (in_req.write) {
+    //     std::cout << "LmemSwitch: Pushing MMIO Write Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+    //     ReqMMIOWrite.push(out_mmio_req, delay_);
+    //     DT(4, this->name() << "-mmio-write-req: " << out_mmio_req);
+    //   } else {
+    //     std::cout << "LmemSwitch: Pushing MMIO Read Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+    //     ReqMMIORead.push(out_mmio_req, delay_);
+    //     DT(4, this->name() << "-mmio-read-req: " << out_mmio_req);
+    //   }
+    // }
     if (has_mmio) {
       out_mmio_rsp.tag = in_req.tag;
       out_mmio_rsp.cid = in_req.cid;

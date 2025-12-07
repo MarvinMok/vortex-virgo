@@ -7,6 +7,10 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
     : SimObject(ctx, StrFormat("virgo_dma%d", cluster->id()))
+    , ReadReqIn(this)
+    , ReadRspIn(this)
+    , WriteReqIn(this)
+    , WriteRspIn(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*8, 0)  
@@ -18,7 +22,7 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
 
 Virgo_DMA::~Virgo_DMA() {}
 
-void Virgo_DMA::read(const void* data,  uint64_t addr, uint32_t /* size */) {
+void Virgo_DMA::read(void* data,  uint64_t addr, uint32_t /* size */) {
     uint32_t* d = (uint32_t*)data;
     uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_BASE_READ_ADDR)) & 0xFFFF ) >> 2;
     std::cout << "DMA read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_BASE_READ_ADDR << ", data " << *d << std::endl;
@@ -132,6 +136,31 @@ void Virgo_DMA::reset() {
 }
 
 void Virgo_DMA::tick() {
+    // MMIO Read Handling
+    if (!ReadReqIn.empty()) {
+        auto& req = ReadReqIn.front();
+        std::cout << "DMA Tick: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
+        LsuRsp rsp(req.mask.size());
+        rsp.tag = req.tag;
+        rsp.cid = req.cid;
+        rsp.uuid = req.uuid;
+        rsp.mask = req.mask;
+        ReadRspIn.push(rsp, 1);
+        ReadReqIn.pop();
+    }
+
+    // MMIO Write Handling
+    if (!WriteReqIn.empty()) {
+        auto& req = WriteReqIn.front();
+        std::cout << "DMA Tick: Write Req tag=" << req.tag << " mask=" << req.mask << std::endl;
+        LsuRsp rsp(req.mask.size());
+        rsp.tag = req.tag;
+        rsp.cid = req.cid;
+        rsp.uuid = req.uuid;
+        rsp.mask = req.mask;
+        WriteRspIn.push(rsp, 1);
+        WriteReqIn.pop();
+    }
 }
 
 

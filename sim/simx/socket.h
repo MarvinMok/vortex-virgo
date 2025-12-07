@@ -51,6 +51,10 @@ public:
     return cluster_;
   }
 
+  const std::vector<Core::Ptr>& cores() const {
+    return cores_;
+  }
+
   const Core::Ptr& cores(uint32_t core_num) const {
     return cores_.at(core_num);
   }

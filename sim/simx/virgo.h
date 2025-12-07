@@ -28,6 +28,40 @@ typedef struct {
     bool accum;
 } virgo_queue_t;
 
+class AccumulatorMem : public SimObject<AccumulatorMem> {
+public:
+    AccumulatorMem(const SimContext& ctx, const char* name, uint64_t capacity);
+    ~AccumulatorMem();
+
+    void read(void* data, uint64_t addr, uint32_t size);
+    void write(const void* data, uint64_t addr, uint32_t size);
+    void tick();
+    void reset();
+    uint64_t size() const;
+
+private:
+    RAM ram_;
+    MemoryUnit mmu_;
+    uint64_t capacity_;
+};
+
+class ScratchPadMem : public SimObject<ScratchPadMem> {
+public:
+    ScratchPadMem(const SimContext& ctx, const char* name, uint64_t capacity);
+    ~ScratchPadMem();
+
+    void read(void* data, uint64_t addr, uint32_t size);
+    void write(const void* data, uint64_t addr, uint32_t size);
+    void tick();
+    void reset();
+    uint64_t size() const;
+
+private:
+    RAM ram_;
+    MemoryUnit mmu_;
+    uint64_t capacity_;
+};
+
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
 public:
 
@@ -56,8 +90,8 @@ private:
     std::vector<std::bitset<32>> tag_table;
     std::queue<virgo_queue_t> virgo_compute_queue_;
     MemoryUnit mmu_;
-    std::vector<uint8_t> accum_mem_;
-    std::vector<uint8_t> scratchpad_mem_;
+    AccumulatorMem accum_mem_;
+    ScratchPadMem scratchpad_mem_;
 };
 
 }
