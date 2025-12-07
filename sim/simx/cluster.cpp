@@ -219,5 +219,15 @@ void Cluster::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
 Cluster::PerfStats Cluster::perf_stats() const {
   PerfStats perf_stats;
   perf_stats.l2cache = l2cache_->perf_stats();
+  perf_stats.dma = dma_->perf_stats();
+  perf_stats.mmio_read_latency = 0;
+  perf_stats.mmio_write_latency = 0;
+  for (auto& socket : sockets_) {
+      for (uint32_t i = 0; i < cores_per_socket_; ++i) {
+          auto core_perf = socket->cores(i)->perf_stats();
+          perf_stats.mmio_read_latency += core_perf.mmio_read_latency;
+          perf_stats.mmio_write_latency += core_perf.mmio_write_latency;
+      }
+  }
   return perf_stats;
 }

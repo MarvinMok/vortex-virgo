@@ -32,6 +32,9 @@ class Cluster : public SimObject<Cluster> {
 public:
   struct PerfStats {
     CacheSim::PerfStats l2cache;
+    Virgo_DMA::PerfStats dma;
+    uint64_t mmio_read_latency;
+    uint64_t mmio_write_latency;
   };
 
   std::vector<SimPort<MemReq>> mem_req_ports;

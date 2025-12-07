@@ -77,6 +77,7 @@ private:
 		instr_trace_t* trace;
 		uint32_t count;
 		bool eop;
+		bool is_mmio;
 	};
 
 	struct lsu_state_t {
@@ -95,6 +96,7 @@ private:
 
 	std::array<lsu_state_t, NUM_LSU_BLOCKS> states_;
 	uint64_t pending_loads_;
+	uint64_t pending_mmio_reads_;
 	std::vector<mem_addr_size_t> pending_addrs_;
 	uint32_t remain_addrs_;
 };

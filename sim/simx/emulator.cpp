@@ -580,6 +580,17 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         CSR_READ_64(VX_CSR_MPM_LMEM_BANK_ST, lmem_perf.bank_stalls);
         }
       } break;
+      case VX_DCR_MPM_CLASS_DMA: {
+        std::cout << "print MPM_DMA CLASS stats" << std::endl;
+        auto cluster_perf = core_->socket()->cluster()->perf_stats();
+        switch (addr) {
+        CSR_READ_64(VX_CSR_MPM_DMA_READS, cluster_perf.dma.reads);
+        CSR_READ_64(VX_CSR_MPM_DMA_WRITES, cluster_perf.dma.writes);
+        CSR_READ_64(VX_CSR_MPM_DMA_TASKS, cluster_perf.dma.transfers);
+        CSR_READ_64(VX_CSR_MPM_DMA_READ_LT, cluster_perf.mmio_read_latency);
+        CSR_READ_64(VX_CSR_MPM_DMA_WRITE_LT, cluster_perf.mmio_write_latency);
+        }
+      } break;
       default:
         std::cerr << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();

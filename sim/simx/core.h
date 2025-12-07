@@ -69,6 +69,8 @@ public:
     uint64_t stores;
     uint64_t ifetch_latency;
     uint64_t load_latency;
+    uint64_t mmio_read_latency;
+    uint64_t mmio_write_latency;
 
     PerfStats()
       : cycles(0)
@@ -96,6 +98,8 @@ public:
       , stores(0)
       , ifetch_latency(0)
       , load_latency(0)
+      , mmio_read_latency(0)
+      , mmio_write_latency(0)
     {}
   };
 

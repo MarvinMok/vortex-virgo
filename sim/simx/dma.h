@@ -20,6 +20,12 @@ class Cluster;
 class Virgo_DMA : public SimObject<Virgo_DMA> {
 public:
 
+    struct PerfStats {
+        uint64_t reads;
+        uint64_t writes;
+        uint64_t transfers;
+    };
+
     Virgo_DMA(const SimContext& ctx,
               const Arch &arch,
               Cluster* cluster);
@@ -38,6 +44,8 @@ public:
 
     void reset();
     void tick();
+
+    const PerfStats& perf_stats() const;
 
 private:
     typedef struct {
@@ -64,6 +72,7 @@ private:
     std::queue<dma_load_t> dma_load_queue_;
     std::vector<std::bitset<32>> tag_table;
     MemoryUnit mmu_;
+    PerfStats perf_stats_;
 };
 
-} // namespace vortex
+} // namespace vortexs

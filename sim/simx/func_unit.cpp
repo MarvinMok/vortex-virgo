@@ -159,6 +159,7 @@ void FpuUnit::tick() {
 LsuUnit::LsuUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "lsu-unit")
 	, pending_loads_(0)
+	, pending_mmio_reads_(0)
 {}
 
 LsuUnit::~LsuUnit()
@@ -169,11 +170,13 @@ void LsuUnit::reset() {
 		state.reset();
 	}
 	pending_loads_ = 0;
+	pending_mmio_reads_ = 0;
 	remain_addrs_ = 0;
 }
 
 void LsuUnit::tick() {
 	core_->perf_stats_.load_latency += pending_loads_;
+	core_->perf_stats_.mmio_read_latency += pending_mmio_reads_;
 
 	// handle memory responses
 	for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
@@ -197,6 +200,9 @@ void LsuUnit::tick() {
 			}
 		}
 		pending_loads_ -= lsu_rsp.mask.count();
+		if (entry.is_mmio) {
+			pending_mmio_reads_ -= lsu_rsp.mask.count();
+		}
 		lsu_rsp_port.pop();
 	}
 
@@ -304,10 +310,20 @@ void LsuUnit::tick() {
 
 			uint32_t count = lsu_req.mask.count();
 			bool is_eop = (remain_addrs_ == 0);
+			bool is_mmio = false;
+			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
+				if (lsu_req.mask.test(i)) {
+					auto type = get_addr_type(lsu_req.addrs.at(i));
+					if (type == AddrType::MMIO) {
+						is_mmio = true;
+						break;
+					}
+				}
+			}
 
 			uint32_t tag = 0;
 			if (!is_write) {
-				tag = state.pending_rd_reqs.allocate({trace, count, is_eop});
+				tag = state.pending_rd_reqs.allocate({trace, count, is_eop, is_mmio});
 			}
 			lsu_req.tag  = tag;
 			lsu_req.cid  = trace->cid;
@@ -323,6 +339,9 @@ void LsuUnit::tick() {
 			} else {
 				core_->perf_stats_.loads += count;
 				pending_loads_ += count;
+				if (is_mmio) {
+					pending_mmio_reads_ += count;
+				}
 			}
 		}
 

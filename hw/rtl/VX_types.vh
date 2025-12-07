@@ -35,6 +35,7 @@
 `define VX_DCR_MPM_CLASS_NONE           0
 `define VX_DCR_MPM_CLASS_CORE           1
 `define VX_DCR_MPM_CLASS_MEM            2
+`define VX_DCR_MPM_CLASS_DMA            3
 
 // User Floating-Point CSRs ///////////////////////////////////////////////////
 
@@ -182,6 +183,18 @@
 // PERF: coalescer
 `define VX_CSR_MPM_COALESCER_MISS       12'hB1F     // coalescer misses
 `define VX_CSR_MPM_COALESCER_MISS_H     12'hB9F
+
+// PERF: dma
+`define VX_CSR_MPM_DMA_READS            12'hB03     // dma reads
+`define VX_CSR_MPM_DMA_READS_H          12'hB83
+`define VX_CSR_MPM_DMA_WRITES           12'hB04     // dma writes
+`define VX_CSR_MPM_DMA_WRITES_H         12'hB84
+`define VX_CSR_MPM_DMA_TASKS            12'hB05     // dma tasks
+`define VX_CSR_MPM_DMA_TASKS_H          12'hB85
+`define VX_CSR_MPM_DMA_READ_LT          12'hB06     // dma read latency
+`define VX_CSR_MPM_DMA_READ_LT_H        12'hB86
+`define VX_CSR_MPM_DMA_WRITE_LT         12'hB07     // dma write latency
+`define VX_CSR_MPM_DMA_WRITE_LT_H       12'hB87
 
 // <Add your own counters: use addresses hB03..B1F, hB83..hB9F>
 

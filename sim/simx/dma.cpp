@@ -16,6 +16,7 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , write_registers(arch.num_cores()*arch.num_warps()*8, 0)  
     , read_registers(arch.num_cores()*arch.num_warps(), 0) 
     , tag_table(4)
+    , perf_stats_()
 {
     
 }
@@ -31,6 +32,7 @@ void Virgo_DMA::read(void* data,  uint64_t addr, uint32_t /* size */) {
         std::abort();
     }
     *d = read_registers.at(super_index);
+    perf_stats_.reads++;
 }
 
 void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
@@ -42,6 +44,7 @@ void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
     uint32_t global_warp_id = core_id * arch_.num_warps() + warp_id;
     std::cout << "DMA write to index " << index << " warp " << warp_id << " core " << core_id << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_WRITE_ADDR << ", data " << *d << std::endl;
     write_registers.at(global_warp_id * 8 + index) = *d;
+    perf_stats_.writes++;
     if (index == 7) {
         read_registers.at(global_warp_id)++;
         tag_table.at(*d).set(global_warp_id);
@@ -58,6 +61,7 @@ void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
             };
             tag_table.at(*d).reset();
             dma_load_queue_.push(dma_load);
+            perf_stats_.transfers++;
             dma_transfer();
         }
     }
@@ -140,7 +144,7 @@ void Virgo_DMA::tick() {
     if (!ReadReqIn.empty()) {
         auto& req = ReadReqIn.front();
         std::cout << "DMA Tick: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
-        LsuRsp rsp(req.mask.size());
+        LsuRsp rsp(LSU_CHANNELS);
         rsp.tag = req.tag;
         rsp.cid = req.cid;
         rsp.uuid = req.uuid;
@@ -153,7 +157,7 @@ void Virgo_DMA::tick() {
     if (!WriteReqIn.empty()) {
         auto& req = WriteReqIn.front();
         std::cout << "DMA Tick: Write Req tag=" << req.tag << " mask=" << req.mask << std::endl;
-        LsuRsp rsp(req.mask.size());
+        LsuRsp rsp(LSU_CHANNELS);
         rsp.tag = req.tag;
         rsp.cid = req.cid;
         rsp.uuid = req.uuid;
@@ -164,5 +168,9 @@ void Virgo_DMA::tick() {
 }
 
 
+
+const Virgo_DMA::PerfStats& Virgo_DMA::perf_stats() const {
+    return perf_stats_;
+}
 
 } // namespace vortex

@@ -215,6 +215,13 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
   uint64_t mem_lat = 0;
   uint64_t mem_bank_stalls = 0;
 
+  // PERF: DMA
+  uint64_t dma_reads = 0;
+  uint64_t dma_writes = 0;
+  uint64_t dma_tasks = 0;
+  uint64_t dma_read_lat = 0;
+  uint64_t dma_write_lat = 0;
+
   uint64_t num_cores;
   CHECK_ERR(vx_dev_caps(hdevice, VX_CAPS_NUM_CORES, &num_cores), {
     return err;
@@ -588,6 +595,44 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
         });
       }
     } break;
+    case VX_DCR_MPM_CLASS_DMA: {
+      uint64_t dma_reads_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_READS, core_id, &dma_reads_per_core), {
+        return err;
+      });
+      uint64_t dma_writes_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_WRITES, core_id, &dma_writes_per_core), {
+        return err;
+      });
+      uint64_t dma_tasks_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_TASKS, core_id, &dma_tasks_per_core), {
+        return err;
+      });
+      uint64_t dma_read_lat_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_READ_LT, core_id, &dma_read_lat_per_core), {
+        return err;
+      });
+      uint64_t dma_write_lat_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_WRITE_LT, core_id, &dma_write_lat_per_core), {
+        return err;
+      });
+
+      dma_reads += dma_reads_per_core;
+      dma_writes += dma_writes_per_core;
+      dma_tasks += dma_tasks_per_core;
+      dma_read_lat += dma_read_lat_per_core;
+      dma_write_lat += dma_write_lat_per_core;
+
+      if (num_cores > 1) {
+         int read_avg_lat = caclAverage(dma_read_lat_per_core, dma_reads_per_core);
+         int write_avg_lat = caclAverage(dma_write_lat_per_core, dma_writes_per_core);
+         fprintf(stream, "PERF: core%d: dma reads=%ld\n", core_id, dma_reads_per_core);
+         fprintf(stream, "PERF: core%d: dma writes=%ld\n", core_id, dma_writes_per_core);
+         fprintf(stream, "PERF: core%d: dma tasks=%ld\n", core_id, dma_tasks_per_core);
+         fprintf(stream, "PERF: core%d: dma read latency=%d cycles\n", core_id, read_avg_lat);
+         fprintf(stream, "PERF: core%d: dma write latency=%d cycles\n", core_id, write_avg_lat);
+      }
+    } break;
     default:
       break;
     }
@@ -678,6 +723,22 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       fprintf(stream, "PERF: memory latency=%d cycles\n", mem_avg_lat);
       fprintf(stream, "PERF: memory bank stalls=%ld (utilization=%d%%)\n", mem_bank_stalls, mem_bank_utilization);
     }
+  } break;
+  case VX_DCR_MPM_CLASS_DMA: {
+    dma_reads /= num_cores;
+    dma_writes /= num_cores;
+    dma_tasks /= num_cores;
+    dma_read_lat /= num_cores;
+    dma_write_lat /= num_cores;
+
+    int read_avg_lat = caclAverage(dma_read_lat, dma_reads);
+    int write_avg_lat = caclAverage(dma_write_lat, dma_writes);
+
+    fprintf(stream, "PERF: dma reads=%ld\n", dma_reads);
+    fprintf(stream, "PERF: dma writes=%ld\n", dma_writes);
+    fprintf(stream, "PERF: dma tasks=%ld\n", dma_tasks);
+    fprintf(stream, "PERF: dma read latency=%d cycles\n", read_avg_lat);
+    fprintf(stream, "PERF: dma write latency=%d cycles\n", write_avg_lat);
   } break;
   default:
     break;

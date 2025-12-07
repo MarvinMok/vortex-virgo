@@ -38,7 +38,7 @@ void kernel_body(kernel_arg_t *arg) {
     size, 
     tile_size       
   );
-
+  vx_barrier(1<<31, vx_num_cores());
   vortex::virgo::dma_fence(1);
   //load A and B
   vortex::virgo::dma_load<TYPE>(
@@ -85,6 +85,7 @@ void kernel_body(kernel_arg_t *arg) {
     //compute this tile
     vortex::virgo::compute<float>(local_A_c, local_B_c, local_C, accum_packed, tile_size, tile_size, tile_size);
     if (k + tile_size < size) {
+      vx_printf("dma load core %d warp %d\n", vx_core_id(), vx_warp_id());
       // Load tile of matrix A & B to local memory
       vortex::virgo::dma_load<TYPE>(
         &A_ptr[g_row * size + k + tile_size],

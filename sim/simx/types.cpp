@@ -108,23 +108,23 @@ void LocalMemSwitch::tick() {
       DT(4, this->name() << "-lmem-req: " << out_lmem_req);
     }
 
-    // if (!out_mmio_req.mask.none()) {
-    //   if (in_req.write) {
-    //     std::cout << "LmemSwitch: Pushing MMIO Write Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
-    //     ReqMMIOWrite.push(out_mmio_req, delay_);
-    //     DT(4, this->name() << "-mmio-write-req: " << out_mmio_req);
-    //   } else {
-    //     std::cout << "LmemSwitch: Pushing MMIO Read Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
-    //     ReqMMIORead.push(out_mmio_req, delay_);
-    //     DT(4, this->name() << "-mmio-read-req: " << out_mmio_req);
-    //   }
-    // }
-    if (has_mmio) {
-      out_mmio_rsp.tag = in_req.tag;
-      out_mmio_rsp.cid = in_req.cid;
-      out_mmio_rsp.uuid = in_req.uuid;
-      RspIn.push(out_mmio_rsp, 1);
+    if (!out_mmio_req.mask.none()) {
+      if (in_req.write) {
+        std::cout << "LmemSwitch: Pushing MMIO Write Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+        ReqMMIOWrite.push(out_mmio_req, delay_);
+        DT(4, this->name() << "-mmio-write-req: " << out_mmio_req);
+      } else {
+        std::cout << "LmemSwitch: Pushing MMIO Read Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+        ReqMMIORead.push(out_mmio_req, delay_);
+        DT(4, this->name() << "-mmio-read-req: " << out_mmio_req);
+      }
     }
+    // if (has_mmio) {
+    //   out_mmio_rsp.tag = in_req.tag;
+    //   out_mmio_rsp.cid = in_req.cid;
+    //   out_mmio_rsp.uuid = in_req.uuid;
+    //   RspIn.push(out_mmio_rsp, 1);
+    // }
     ReqIn.pop();
   }
 }

@@ -81,6 +81,7 @@ static __attribute__((always_inline)) void dma_fence(uint32_t num_ops) {
     if (dma_counters[global_warp_id] > 0) {
         dma_counters[global_warp_id]-= num_ops;
     }
+    vx_printf("fence complete core: %d, warp: %d\n", local_core_id, vx_warp_id());
     //set all threads active
     vx_tmc(-1);
 
@@ -147,7 +148,7 @@ static __attribute__((always_inline)) void dma_load(T* src_addr, T* dst_addr, ui
     // Assuming MMIO space is partitioned per warp as implied by previous code
     uint32_t offset = global_warp_id * (sizeof(dma_load_t) + 4);
     
-    // vx_printf("dma_load: core=%d warp=%d offset=%d tag=%d\n", core_id, wid, offset, dma_tags[global_warp_id]);
+    //vx_printf("dma_load: core=%d warp=%d offset=%d tag=%d\n", core_id, wid, offset, dma_tags[global_warp_id]);
     
     volatile uint32_t* MMIO_WRITE_ADDR = (volatile uint32_t*)(0x0000F800 + offset);
     MMIO_WRITE_ADDR[0] = dma_load.src_addr;
