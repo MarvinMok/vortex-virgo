@@ -45,7 +45,7 @@ Cluster::Cluster(const SimContext& ctx,
     LSU_WORD_SIZE,
     LSU_CHANNELS,
     log2ceil(LMEM_NUM_BANKS),
-    false
+    true
   });
 
   // create sockets (which create cores within each socket)
@@ -64,7 +64,7 @@ Cluster::Cluster(const SimContext& ctx,
     log2ceil(L2_NUM_WAYS),  // A
     log2ceil(L2_NUM_BANKS), // B
     XLEN,                   // address bits
-    L2_NUM_REQS,            // request size
+    L2_NUM_REQS + LSU_CHANNELS, // request size
     L2_MEM_PORTS,           // memory ports
     L2_WRITEBACK,           // write-back
     false,                  // write response
@@ -88,7 +88,7 @@ Cluster::Cluster(const SimContext& ctx,
 
   // create Core Arbiter (type MemArbiter), one output
   snprintf(sname, 100, "%s-core_arb", this->name().c_str());
-  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
+  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS + 1, 1);
 
   // create lmem adapter
   snprintf(sname, 100, "%s-lsu_lmem_adapter", this->name().c_str());
@@ -139,6 +139,19 @@ Cluster::Cluster(const SimContext& ctx,
 
   mmio_write_arb->ReqOut.at(0).bind(&dma_->WriteReqIn);
   dma_->WriteRspIn.bind(&mmio_write_arb->RspOut.at(0));
+
+
+  // Connect GlobalMemAdapter to L2 Cache (inputs)
+  for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
+      uint32_t l2_port_idx = L2_NUM_REQS + i;
+      dma_->global_mem_adapter()->lsu_adapter_->ReqOut.at(i).bind(&l2cache_->CoreReqPorts.at(l2_port_idx));
+      l2cache_->CoreRspPorts.at(l2_port_idx).bind(&dma_->global_mem_adapter()->lsu_adapter_->RspOut.at(i));
+  }
+
+  // Connect LocalMemAdapter to CoreArbiter
+  dma_->local_mem_adapter()->LsuReqOut.bind(&core_arb->ReqIn.at(NUM_SOCKETS));
+  core_arb->RspIn.at(NUM_SOCKETS).bind(&dma_->local_mem_adapter()->LsuRspIn);
+
 }
 
 Cluster::~Cluster() {

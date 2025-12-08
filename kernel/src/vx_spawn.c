@@ -145,6 +145,7 @@ static void __attribute__ ((noinline)) process_thread_groups() {
   vx_kernel_func_cb callback = targs->callback;
   const void* arg = targs->arg;
   vx_printf("start group=%d, end group=%d, group stride=%d\n", start_group, end_group, group_stride);
+  vx_barrier(1 << 31, vx_num_cores());
   for (uint32_t group_id = start_group; group_id < end_group; group_id += group_stride) {
     blockIdx.x = group_id % gridDim_x;
     blockIdx.y = (group_id / gridDim_x) % gridDim_y;

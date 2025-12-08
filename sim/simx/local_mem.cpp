@@ -84,10 +84,12 @@ public:
 
 			auto& bank_req = xbar_req_out.front();
 			DT(4, simobject_->name() << "-bank" << i << "-req : " << bank_req);
+            std::cout << "LocalMem: " << simobject_->name() << " bank " << i << " received req tag=" << bank_req.tag << " write=" << bank_req.write << std::endl;
 
 			if (!bank_req.write || config_.write_reponse) {
 				// send xbar response
 				MemRsp bank_rsp{bank_req.tag, bank_req.cid, bank_req.uuid};
+                std::cout << "LocalMem: " << simobject_->name() << " bank " << i << " pushing rsp tag=" << bank_rsp.tag << std::endl;
 				mem_xbar_->RspOut.at(i).push(bank_rsp);
 			}
 

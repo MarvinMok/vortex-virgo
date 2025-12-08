@@ -29,6 +29,8 @@
 #include "debug.h"
 #include "constants.h"
 
+#include <string.h>
+
 namespace vortex {
 
 typedef uint8_t Byte;
@@ -972,6 +974,38 @@ struct LsuRsp {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+struct DmaReq {
+  LsuReq lsuReq;
+  std::vector<uint64_t> dst_addrs;
+  bool last_req;
+  uint32_t src_id;
+  uint64_t tag;
+
+  DmaReq(uint32_t size)
+    : lsuReq(size)
+    , dst_addrs(size, 0)
+    , last_req(false)
+    , src_id(0)
+    , tag(0)
+  {}
+};
+
+struct DmaRsp {
+  LsuRsp lsuRsp;
+  bool last_req;
+  uint32_t src_id;
+  uint64_t tag;
+
+  DmaRsp(uint32_t size)
+    : lsuRsp(size)
+    , last_req(false)
+    , src_id(0)
+    , tag(0)
+  {}
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 struct MemReq {
   uint64_t addr;
   bool     write;
@@ -1237,12 +1271,18 @@ public:
           continue;
         requests.set(r, !Inputs.at(i).empty());
       }
+      if (this->name() == "cluster0-core_arb-req_arb") {
+        std::cout << "TxArbiter: " << this->name() << ", requests: " << std::endl;
+      }
       if (requests.any()) {
         uint32_t g = arbiters_.at(o).grant(requests);
         uint32_t i = o * R + g;
         auto& req_in = Inputs.at(i);
         auto& req = req_in.front();
         DT(4, this->name() << "-req" << i << "_" << o << ": " << req);
+        if (this->name() == "cluster0-core_arb") {
+             std::cout << "TxArbiter: " << this->name() << ", Granting req from input " << i << " to output " << o << std::endl;
+        }
         Outputs.at(o).push(RspType(req, i), delay_);
         req_in.pop();
       }
@@ -1397,6 +1437,7 @@ public:
     , rsp_delay_(rsp_delay)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
   {
+    std::cout << "TxRxArbiter: " << this->name() << ", num_inputs=" << num_inputs << ", num_outputs=" << num_outputs << std::endl;
     if (num_inputs != num_outputs) {
       // allocate arbiter
       arbiter_ = ReqArb::Create(name, type, num_inputs, num_outputs, req_delay);
@@ -1448,6 +1489,9 @@ public:
         }
         uint32_t i = o * R + r;
         DT(4, this->name() << "-rsp" << o << "_" << i << ": " << in_rsp);
+        if (this->name() == "cluster0-core_arb") {
+          std::cout << "TxRxAdapter: " << this->name() << ", Pushing Rsp to port " << i << " tag=" << in_rsp.tag << std::endl;
+        }
         RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }
@@ -1557,6 +1601,9 @@ public:
           in_rsp.tag = rsp.tag >> lg2_inputs_;
         }
         DT(4, this->name() << "-rsp" << g << "_" << i << ": " << in_rsp);
+        if (this->name() == "cluster0-lmem-xbar") {
+             std::cout << "TxRxCrossBar: " << this->name() << ", Forwarding rsp from output " << g << " to input " << i << " tag=" << in_rsp.tag << std::endl;
+        }
         RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }
@@ -1639,6 +1686,7 @@ private:
 
 using LsuArbiter  = TxRxArbiter<LsuReq, LsuRsp>;
 using MemArbiter  = TxRxArbiter<MemReq, MemRsp>;
+using DmaArbiter  = TxRxArbiter<DmaReq, DmaRsp>;
 using MemCrossBar = TxRxCrossBar<MemReq, MemRsp>;
 
 }

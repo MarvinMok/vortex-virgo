@@ -51,14 +51,14 @@ void LocalMemSwitch::tick() {
   }
   if (!RspMMIORead.empty()) {
     auto& out_rsp = RspMMIORead.front();
-    std::cout << "LmemSwitch: Pop MMIO Read Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
+    //std::cout << "LmemSwitch: Pop MMIO Read Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
     DT(4, this->name() << "-mmio-read-rsp: " << out_rsp);
     RspIn.push(out_rsp, 1);
     RspMMIORead.pop();
   }
   if (!RspMMIOWrite.empty()) {
     auto& out_rsp = RspMMIOWrite.front();
-    std::cout << "LmemSwitch: Pop MMIO Write Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
+    //std::cout << "LmemSwitch: Pop MMIO Write Rsp tag=" << out_rsp.tag << " cid=" << out_rsp.cid << " uuid=" << out_rsp.uuid << std::endl;
     DT(4, this->name() << "-mmio-write-rsp: " << out_rsp);
     RspIn.push(out_rsp, 1);
     RspMMIOWrite.pop();
@@ -110,11 +110,11 @@ void LocalMemSwitch::tick() {
 
     if (!out_mmio_req.mask.none()) {
       if (in_req.write) {
-        std::cout << "LmemSwitch: Pushing MMIO Write Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+        //std::cout << "LmemSwitch: Pushing MMIO Write Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
         ReqMMIOWrite.push(out_mmio_req, delay_);
         DT(4, this->name() << "-mmio-write-req: " << out_mmio_req);
       } else {
-        std::cout << "LmemSwitch: Pushing MMIO Read Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
+        //std::cout << "LmemSwitch: Pushing MMIO Read Req tag=" << in_req.tag << " cid=" << in_req.cid << " uuid=" << in_req.uuid << std::endl;
         ReqMMIORead.push(out_mmio_req, delay_);
         DT(4, this->name() << "-mmio-read-req: " << out_mmio_req);
       }
@@ -142,7 +142,9 @@ LsuMemAdapter::LsuMemAdapter(
   , ReqOut(num_inputs, this)
   , RspOut(num_inputs, this)
   , delay_(delay)
-{}
+{
+  std::cout << "LsuMemAdapter: " << this->name() << ", num_inputs=" << num_inputs << std::endl;
+}
 
 void LsuMemAdapter::reset() {}
 
@@ -154,7 +156,10 @@ void LsuMemAdapter::tick() {
     if (RspOut.at(i).empty())
       continue;
     auto& out_rsp = RspOut.at(i).front();
-    DT(4, this->name() << "-rsp" << i << ": " << out_rsp);
+    //DT(4, this->name() << "-rsp" << i << ": " << out_rsp);
+    if (this->name() == "cluster0-lsu_lmem_adapter") {
+      std::cout << "LsuMemAdapter: " << this->name() << ", Processing Rsp from port " << i << " tag=" << out_rsp.tag << std::endl;
+    }
 
     // build memory response
     LsuRsp in_rsp(input_size);
@@ -198,7 +203,11 @@ void LsuMemAdapter::tick() {
         out_req.uuid  = in_req.uuid;
         // send memory request
         ReqOut.at(i).push(out_req, delay_);
-        DT(4, this->name() << "-req" << i << ": " << out_req);
+        //DT(4, this->name() << "-req" << i << ": " << out_req);
+        if (this->name() == "cluster0-lsu_lmem_adapter") {
+         std::cout << "LsuMemAdapter: " << this->name() << ", Pushing MemReq to port " << i << " tag=" << out_req.tag << " addr=" << std::hex << out_req.addr << std::dec << std::endl;
+        }
+        
       }
     }
     ReqIn.pop();

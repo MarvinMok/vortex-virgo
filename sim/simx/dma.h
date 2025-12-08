@@ -17,6 +17,68 @@ namespace vortex {
 
 class Cluster;
 
+class GlobalMemAdapter : public SimObject<GlobalMemAdapter> {
+public:
+    std::vector<SimPort<DmaReq>> DmaReqIn;
+    std::vector<SimPort<DmaRsp>> DmaRspOut;
+    SimPort<DmaReq> DmaReqOut;
+    SimPort<DmaRsp> DmaRspIn;
+
+    GlobalMemAdapter(const SimContext& ctx, const char* name, uint32_t num_inputs);
+    ~GlobalMemAdapter();
+
+    void reset();
+    void tick();
+
+    LsuMemAdapter::Ptr lsu_adapter_;
+    DmaArbiter::Ptr arbiter_;
+
+private:
+    struct pending_req_t {
+        bool last_req;
+        uint32_t src_id;
+        uint32_t input_port;
+        bool write;
+        std::vector<uint64_t> dst_addrs;
+        uint32_t count;
+        uint32_t orig_count;
+        uint64_t tag;
+    };
+    HashTable<pending_req_t> pending_reqs;
+};
+
+class LocalMemAdapter : public SimObject<LocalMemAdapter> {
+public:
+    std::vector<SimPort<DmaReq>> DmaReqIn;
+    std::vector<SimPort<DmaRsp>> DmaRspOut;
+    SimPort<DmaReq> DmaReqOut;
+    SimPort<DmaRsp> DmaRspIn;
+
+    SimPort<LsuReq> LsuReqOut;
+    SimPort<LsuRsp> LsuRspIn;
+
+    LocalMemAdapter(const SimContext& ctx, const char* name, uint32_t num_inputs);
+    ~LocalMemAdapter();
+
+    void reset();
+    void tick();
+
+    DmaArbiter::Ptr arbiter_;
+
+private:
+    struct pending_req_t {
+        bool last_req;
+        uint32_t src_id;
+        uint32_t input_port; // Added input_port to LocalMemAdapter pending_req_t
+        bool write;          // Added write to LocalMemAdapter pending_req_t
+        std::vector<uint64_t> dst_addrs; // Added dst_addrs to LocalMemAdapter pending_req_t
+        uint32_t count;
+        uint32_t orig_count;
+        uint64_t tag;
+    };
+    HashTable<pending_req_t> pending_reqs;
+};
+
 class Virgo_DMA : public SimObject<Virgo_DMA> {
 public:
 
@@ -47,6 +109,8 @@ public:
 
     const PerfStats& perf_stats() const;
 
+    const GlobalMemAdapter::Ptr& global_mem_adapter() const { return global_mem_adapter_; }
+    const LocalMemAdapter::Ptr& local_mem_adapter() const { return local_mem_adapter_; }
 private:
     typedef struct {
         uint32_t src_addr;
@@ -58,7 +122,7 @@ private:
         uint32_t dst_stride;
     } dma_load_t;
 
-    void dma_transfer();
+    void dma_transfer(const dma_load_t& dma_load);
     void data_transfer( uint64_t src_addr, 
                         uint64_t dst_addr, 
                         uint32_t data_type_size, 
@@ -73,6 +137,18 @@ private:
     std::vector<std::bitset<32>> tag_table;
     MemoryUnit mmu_;
     PerfStats perf_stats_;
+
+    struct DmaState {
+        uint32_t row;
+        uint32_t col;
+        bool busy;
+        DmaState() : row(0), col(0), busy(false) {}
+        void reset() { row = 0; col = 0; busy = false; }
+    };
+    DmaState dma_state_;
+    GlobalMemAdapter::Ptr global_mem_adapter_;
+    LocalMemAdapter::Ptr local_mem_adapter_;
+
 };
 
-} // namespace vortexs
+} // namespace vortex
