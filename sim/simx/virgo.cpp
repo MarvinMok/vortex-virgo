@@ -71,6 +71,21 @@ void ScratchPadMem::reset() {
 }
 uint64_t ScratchPadMem::size() const { return capacity_; }
 
+LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+LocalMemReader::~LocalMemReader() {}
+void LocalMemReader::tick() {}
+void LocalMemReader::reset() {}
+
+SystolicArray::SystolicArray(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+SystolicArray::~SystolicArray() {}
+void SystolicArray::tick() {}
+void SystolicArray::reset() {}
+
+SysSubArray::SysSubArray(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+SysSubArray::~SysSubArray() {}
+void SysSubArray::tick() {}
+void SysSubArray::reset() {}
+
 Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
@@ -83,7 +98,10 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
     , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
-    , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 512)
+    , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
+    , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
+    , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
+    , sys_sub_array_(ctx, StrFormat("sys_sub_array%d", cluster->id()).c_str())
     , perf_stats_()
 {
     
@@ -165,6 +183,7 @@ void Virgo_MatMul::MatMul() {
     auto src_addr_B_type = get_addr_type(src_addr_B);
     auto dst_addr_type = get_addr_type(dst_addr);
     std::cout <<"matmuling" << std::endl;
+    std::cout << "src_addr_A " << std::hex << src_addr_A << " src_addr_B " << std::hex << src_addr_B << " dst_addr " << std::hex << dst_addr << std::endl;
     if (data_type == FP32) {
         for (uint32_t i = 0; i < num_rows_A; i++) { // loop over rows of matrix A
             for (uint32_t j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B

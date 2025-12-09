@@ -62,6 +62,30 @@ private:
     uint64_t capacity_;
 };
 
+class LocalMemReader : public SimObject<LocalMemReader> {
+public:
+    LocalMemReader(const SimContext& ctx, const char* name);
+    ~LocalMemReader();
+    void tick();
+    void reset();
+};
+
+class SystolicArray : public SimObject<SystolicArray> {
+public:
+    SystolicArray(const SimContext& ctx, const char* name);
+    ~SystolicArray();
+    void tick();
+    void reset();
+};
+
+class SysSubArray : public SimObject<SysSubArray> {
+public:
+    SysSubArray(const SimContext& ctx, const char* name);
+    ~SysSubArray();
+    void tick();
+    void reset();
+};
+
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
 public:
 
@@ -102,6 +126,9 @@ private:
     MemoryUnit mmu_;
     AccumulatorMem accum_mem_;
     ScratchPadMem scratchpad_mem_;
+    LocalMemReader local_mem_reader_;
+    SystolicArray systolic_array_;
+    SysSubArray sys_sub_array_;
     PerfStats perf_stats_;
 };
 
