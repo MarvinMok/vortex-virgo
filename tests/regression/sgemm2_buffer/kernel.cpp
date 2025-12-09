@@ -17,7 +17,7 @@ void kernel_body(kernel_arg_t *arg) {
   auto local_A_1 = (TYPE*)local_ptr + 2 * blockDim.x * blockDim.y;
   auto local_B_1 = (TYPE*)local_ptr + 3 * blockDim.x * blockDim.y;
   auto local_C = (TYPE*)local_ptr + 4 * blockDim.x * blockDim.y;
-  uint32_t accum_C = 12345;
+  uint32_t accum_C = 0x0;
   auto size = arg->size;
   auto tile_size = arg->tile_size;
 
@@ -27,19 +27,9 @@ void kernel_body(kernel_arg_t *arg) {
 
   // Determine local row and column indices
   auto l_row = threadIdx.x;
-  auto l_col = threadIdx.y;
-
+  auto l_col = threadIdx.y;;
   auto C_ptr_local = &C_ptr[g_row * size + g_col];
-  vortex::virgo::dma_load<TYPE>(
-    C_ptr_local,
-    local_C,
-    tile_size,
-    tile_size,
-    size, 
-    tile_size       
-  );
   vx_barrier(1<<31, vx_num_cores());
-  vortex::virgo::dma_fence(1);
   //load A and B
   vortex::virgo::dma_load<TYPE>(
       &A_ptr[g_row * size],
@@ -69,10 +59,10 @@ void kernel_body(kernel_arg_t *arg) {
     vx_barrier(1<<31, vx_num_cores());
     //p is for producer (dma load), and c  is for consumer (matrix multiply!)
     //hard coded since threadblock size is 4 by 4, so tile_size is 4
-    auto local_A_p = (k >> 2) & 1 ? local_A_0 : local_A_1;
-    auto local_B_p = (k >> 2) & 1 ? local_B_0 : local_B_1;
-    auto local_A_c = (k >> 2) & 1 ? local_A_1 : local_A_0;
-    auto local_B_c = (k >> 2) & 1 ? local_B_1 : local_B_0;
+    auto local_A_p = (k / tile_size) % 2 ? local_A_0 : local_A_1;
+    auto local_B_p = (k / tile_size) % 2 ? local_B_0 : local_B_1;
+    auto local_A_c = (k / tile_size) % 2 ? local_A_1 : local_A_0;
+    auto local_B_c = (k / tile_size) % 2 ? local_B_1 : local_B_0;
     bool accum = (k != 0);
     bool store = (k + tile_size >= size);
 
