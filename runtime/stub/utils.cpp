@@ -221,6 +221,12 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
   uint64_t dma_tasks = 0;
   uint64_t dma_read_lat = 0;
   uint64_t dma_write_lat = 0;
+  
+  // PERF: VIRGO MM
+  uint64_t virgo_mm_reads = 0;
+  uint64_t virgo_mm_transfers = 0;
+  uint64_t virgo_mm_writes = 0;
+  // uint64_t virgo_mm_read_lt = 0;
 
   uint64_t num_cores;
   CHECK_ERR(vx_dev_caps(hdevice, VX_CAPS_NUM_CORES, &num_cores), {
@@ -616,6 +622,22 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_DMA_WRITE_LT, core_id, &dma_write_lat_per_core), {
         return err;
       });
+      uint64_t virgo_mm_reads_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_VIRGO_MM_READS, core_id, &virgo_mm_reads_per_core), {
+        return err;
+      });
+      uint64_t virgo_mm_transfers_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_VIRGO_MM_TRANSFERS, core_id, &virgo_mm_transfers_per_core), {
+        return err;
+      });
+      uint64_t virgo_mm_writes_per_core;
+      CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_VIRGO_MM_WRITES, core_id, &virgo_mm_writes_per_core), {
+        return err;
+      });
+      // uint64_t virgo_mm_read_lt_per_core;
+      // CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_VIRGO_MM_READ_LT, core_id, &virgo_mm_read_lt_per_core), {
+      //   return err;
+      // });
 
       dma_reads += dma_reads_per_core;
       dma_writes += dma_writes_per_core;
@@ -623,14 +645,23 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       dma_read_lat += dma_read_lat_per_core;
       dma_write_lat += dma_write_lat_per_core;
 
+      virgo_mm_reads += virgo_mm_reads_per_core;
+      virgo_mm_transfers+= virgo_mm_transfers_per_core;
+      virgo_mm_writes += virgo_mm_writes_per_core;
+      // virgo_mm_read_lt += virgo_mm_read_lt_per_core;
+
       if (num_cores > 1) {
-         int read_avg_lat = caclAverage(dma_read_lat_per_core, dma_reads_per_core);
-         int write_avg_lat = caclAverage(dma_write_lat_per_core, dma_writes_per_core);
-         fprintf(stream, "PERF: core%d: dma reads=%ld\n", core_id, dma_reads_per_core);
-         fprintf(stream, "PERF: core%d: dma writes=%ld\n", core_id, dma_writes_per_core);
-         fprintf(stream, "PERF: core%d: dma tasks=%ld\n", core_id, dma_tasks_per_core);
-         fprintf(stream, "PERF: core%d: dma read latency=%d cycles\n", core_id, read_avg_lat);
-         fprintf(stream, "PERF: core%d: dma write latency=%d cycles\n", core_id, write_avg_lat);
+        int read_avg_lat = caclAverage(dma_read_lat_per_core, dma_reads_per_core);
+        int write_avg_lat = caclAverage(dma_write_lat_per_core, dma_writes_per_core);
+        fprintf(stream, "PERF: core%d: dma reads=%ld\n", core_id, dma_reads_per_core);
+        fprintf(stream, "PERF: core%d: dma writes=%ld\n", core_id, dma_writes_per_core);
+        fprintf(stream, "PERF: core%d: dma tasks=%ld\n", core_id, dma_tasks_per_core);
+        fprintf(stream, "PERF: core%d: dma read latency=%d cycles\n", core_id, read_avg_lat);
+        fprintf(stream, "PERF: core%d: dma write latency=%d cycles\n", core_id, write_avg_lat);
+
+        fprintf(stream, "PERF: core%d: virgo mm reads=%ld\n", core_id, virgo_mm_reads_per_core);
+        fprintf(stream, "PERF: core%d: virgo mm transfers=%ld\n", core_id, virgo_mm_transfers_per_core);
+        fprintf(stream, "PERF: core%d: virgo mm writes=%ld\n", core_id, virgo_mm_writes_per_core);
       }
     } break;
     default:
@@ -731,7 +762,12 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     dma_read_lat /= num_cores;
     dma_write_lat /= num_cores;
 
-    int read_avg_lat = caclAverage(dma_read_lat, dma_reads);
+    virgo_mm_reads /= num_cores;
+    virgo_mm_transfers /= num_cores;
+    virgo_mm_writes /= num_cores;
+    // virgo_mm_read_lt /= num_cores;
+
+    int read_avg_lat = caclAverage(dma_read_lat, virgo_mm_reads);
     int write_avg_lat = caclAverage(dma_write_lat, dma_writes);
 
     fprintf(stream, "PERF: dma reads=%ld\n", dma_reads);
@@ -739,6 +775,9 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     fprintf(stream, "PERF: dma tasks=%ld\n", dma_tasks);
     fprintf(stream, "PERF: dma read latency=%d cycles\n", read_avg_lat);
     fprintf(stream, "PERF: dma write latency=%d cycles\n", write_avg_lat);
+    fprintf(stream, "PERF: virgo_mm reads=%d\n", virgo_mm_reads);
+    fprintf(stream, "PERF: virgo_mm transfers=%d\n", virgo_mm_transfers);
+    fprintf(stream, "PERF: virgo_mm writes=%d\n", virgo_mm_writes);
   } break;
   default:
     break;

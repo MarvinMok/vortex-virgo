@@ -589,6 +589,10 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         CSR_READ_64(VX_CSR_MPM_DMA_TASKS, cluster_perf.dma.transfers);
         CSR_READ_64(VX_CSR_MPM_DMA_READ_LT, cluster_perf.mmio_read_latency);
         CSR_READ_64(VX_CSR_MPM_DMA_WRITE_LT, cluster_perf.mmio_write_latency);
+        CSR_READ_64(VX_CSR_MPM_VIRGO_MM_READS, cluster_perf.virgo_mm.reads);
+        CSR_READ_64(VX_CSR_MPM_VIRGO_MM_TRANSFERS, cluster_perf.virgo_mm.transfers);
+        CSR_READ_64(VX_CSR_MPM_VIRGO_MM_WRITES, cluster_perf.virgo_mm.writes);
+        // CSR_READ_64(VX_CSR_MPM_VIRGO_MM_READ_LT, cluster_perf.mmio_write_latency);
         }
       } break;
       default:

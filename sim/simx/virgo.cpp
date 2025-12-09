@@ -35,6 +35,7 @@ void AccumulatorMem::write(const void* data, uint64_t addr, uint32_t size) {
 }
 
 void AccumulatorMem::tick() {}
+
 void AccumulatorMem::reset() {
     for (uint64_t i = 0; i < ram_.size(); i += 4) {
         uint32_t zero = 0;
@@ -74,6 +75,8 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
+    , ReqIn(this)
+    , RspIn(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
@@ -81,6 +84,7 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , tag_table(4) // number of max in-flight matmul unit instructions
     , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
     , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 512)
+    , perf_stats_()
 {
     
 }
@@ -92,6 +96,8 @@ void Virgo_MatMul::read(const void* data, uint64_t addr, uint32_t /* size */) {
     uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_VIRGO_BASE_READ_ADDR)) & 0xFFFF ) >> 2;
     std::cout << "Virgo read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_VIRGO_BASE_READ_ADDR << ", data " << *d << std::endl;
     *d = read_registers.at(super_index);
+
+    perf_stats_.reads++;
 }
 
 void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
@@ -105,6 +111,8 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
     uint32_t global_warp_id = core_id * arch_.num_warps() + warp_id;
     std::cout << "writing super_index " << super_index << " index " << index << " warp id " << warp_id << " core id " << core_id << std::endl;
     write_registers.at(global_warp_id * 9 + index) = *d;
+
+    perf_stats_.writes++;
     
     if (index == 8) { // 8 index == 9th thing (commit address, tag)
         uint32_t tag = write_registers.at(global_warp_id * 9 + 8);
@@ -134,6 +142,8 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
 
             tag_table.at(tag).reset();
             virgo_compute_queue_.push(virgo_compute); // add to queue
+
+            perf_stats_.transfers++;
             MatMul();
         }
     }   
@@ -160,7 +170,6 @@ void Virgo_MatMul::MatMul() {
             for (uint32_t j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B
                 float sum = 0;
                 if (virgo_compute.accum) {
-                    // Use memcpy to avoid strict aliasing violation
                     uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
                     if (offset + 4 <= accum_mem_.size()) {
                         accum_mem_.read(&sum, offset, 4);
@@ -176,7 +185,7 @@ void Virgo_MatMul::MatMul() {
                     if (src_addr_A_type == AddrType::Shared) {
                         cluster_->local_mem()->read(static_cast<void*>(&aVal), static_cast<uint64_t>(src_addr_A + (i * num_cols_A + k) * 4), 4);
                     } else {
-                        mmu_.read(static_cast<void*>(&aVal), static_cast<uint64_t>(src_addr_A + (i * num_cols_A + k) * 4), 4, 0);
+                        std::cout << "Error: Can only read source matrix A from shared memory" << std::endl;
                     }
                     // Write A to scratchpad
                     uint32_t offset_A = virgo_compute.tag * 128 + (i * num_cols_A + k) * 4;
@@ -189,7 +198,7 @@ void Virgo_MatMul::MatMul() {
                     if (src_addr_B_type == AddrType::Shared) {
                         cluster_->local_mem()->read(static_cast<void*>(&bVal), static_cast<uint64_t>(src_addr_B + (k * num_cols_B + j) * 4), 4);
                     } else {
-                        mmu_.read(static_cast<void*>(&bVal), static_cast<uint64_t>(src_addr_B + (k * num_cols_B + j) * 4), 4, 0);
+                        std::cout << "Error: Can only read source matrix A from shared memory" << std::endl;
                     }
                     // Write B to scratchpad
                     uint32_t offset_B = virgo_compute.tag * 128 + 64 + (k * num_cols_B + j) * 4;
@@ -257,4 +266,19 @@ void Virgo_MatMul::reset() {
 
 void Virgo_MatMul::tick() {
     // for TIMING simulation, where we'll actually make the matrix multiply a systolic array
+    if (!ReqIn.empty()) {
+        auto& req = ReqIn.front();
+        std::cout << "Virgo Matmul Tick: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
+        LsuRsp rsp(LSU_CHANNELS);
+        rsp.tag = req.tag;
+        rsp.cid = req.cid;
+        rsp.uuid = req.uuid;
+        rsp.mask = req.mask;
+        RspIn.push(rsp, 1);
+        ReqIn.pop();
+    }
+}
+
+const Virgo_MatMul::PerfStats& Virgo_MatMul::perf_stats() const {
+    return perf_stats_;
 }

@@ -35,6 +35,7 @@ public:
     Virgo_DMA::PerfStats dma;
     uint64_t mmio_read_latency;
     uint64_t mmio_write_latency;
+    Virgo_MatMul::PerfStats virgo_mm;
   };
 
   std::vector<SimPort<MemReq>> mem_req_ports;
@@ -93,9 +94,10 @@ private:
   std::vector<CoreMask>       barriers_;
   CacheSim::Ptr               l2cache_;
   Virgo_DMA::Ptr              dma_;
+  Virgo_MatMul::Ptr           virgo_matmul_;
   uint32_t                    cores_per_socket_;
   LocalMem::Ptr               local_mem_;
-  Virgo_MatMul::Ptr           virgo_matmul_;
+  
 };
 
 } // namespace vortex

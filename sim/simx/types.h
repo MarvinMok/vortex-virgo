@@ -1642,6 +1642,9 @@ public:
   SimPort<LsuReq> ReqMMIOWrite;
   SimPort<LsuRsp> RspMMIOWrite;
 
+  SimPort<LsuReq> ReqVirgoMMIO; // virgo LSU request
+  SimPort<LsuRsp> RspVirgoMMIO;
+
   SimPort<LsuReq> ReqDC;
   SimPort<LsuRsp> RspDC;
 

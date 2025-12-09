@@ -122,7 +122,11 @@ Cluster::Cluster(const SimContext& ctx,
   snprintf(sname, 100, "%s-mmio_write_arb", this->name().c_str());
   auto mmio_write_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
 
-  // Connect Sockets to MMIO Arbiters
+  // Create Virgo MMIO arbiter
+  snprintf(sname, 100, "%s-virgo_mmio_arb", this->name().c_str());
+  auto virgo_mmio_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS, 1);
+
+  // Connect Sockets to DMA/Virgo MMIO Arbiters
   for (uint32_t i = 0; i < NUM_SOCKETS; ++i) {
       // Assuming 1 core per socket as per plan
       auto& core = sockets_.at(i)->cores(0);
@@ -131,6 +135,10 @@ Cluster::Cluster(const SimContext& ctx,
 
       core->mmio_write_arb()->ReqOut.at(0).bind(&mmio_write_arb->ReqIn.at(i));
       mmio_write_arb->RspIn.at(i).bind(&core->mmio_write_arb()->RspOut.at(0));
+
+      // connect core-levle Virgo MMIO arbiter to cluster-level arbiter
+      core->virgo_mmio_arb()->ReqOut.at(0).bind(&virgo_mmio_arb->ReqIn.at(i));
+      virgo_mmio_arb->RspIn.at(i).bind(&core->virgo_mmio_arb()->RspOut.at(0));
   }
 
   // Connect MMIO Arbiters to DMA
@@ -140,6 +148,9 @@ Cluster::Cluster(const SimContext& ctx,
   mmio_write_arb->ReqOut.at(0).bind(&dma_->WriteReqIn);
   dma_->WriteRspIn.bind(&mmio_write_arb->RspOut.at(0));
 
+  // Connect Virgo MMIO arbiter to Virgo MatMul class
+  virgo_mmio_arb->ReqOut.at(0).bind(&virgo_matmul_->ReqIn);
+  virgo_matmul_->RspIn.bind(&virgo_mmio_arb->RspOut.at(0));
 
   // Connect GlobalMemAdapter to L2 Cache (inputs)
   for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
@@ -233,6 +244,7 @@ Cluster::PerfStats Cluster::perf_stats() const {
   PerfStats perf_stats;
   perf_stats.l2cache = l2cache_->perf_stats();
   perf_stats.dma = dma_->perf_stats();
+  perf_stats.virgo_mm = virgo_matmul_->perf_stats();
   perf_stats.mmio_read_latency = 0;
   perf_stats.mmio_write_latency = 0;
   for (auto& socket : sockets_) {

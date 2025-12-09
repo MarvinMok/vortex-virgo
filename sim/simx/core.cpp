@@ -76,7 +76,7 @@ Core::Core(const SimContext& ctx,
     lsu_dcache_adapter.at(b) = LsuMemAdapter::Create(sname, DCACHE_CHANNELS, 1);
   }
 
-  // create local memory
+  // local memory at the cluster-level now
   // snprintf(sname, 100, "%s-lmem", this->name().c_str());
   // local_mem_ = LocalMem::Create(sname, LocalMem::Config{
   //   (1 << LMEM_LOG_SIZE),
@@ -104,6 +104,10 @@ Core::Core(const SimContext& ctx,
   snprintf(sname, 100, "%s-mmio_write_arb", this->name().c_str());
   mmio_write_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
 
+  // create Virgo MMIO  arbiter
+  snprintf(sname, 100, "%s-virgo_mmio_arb", this->name().c_str());
+  virgo_mmio_arb_ = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_LSU_BLOCKS, 1);
+
   // connect lmem switch
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
     // bind ReqDC port (output from lmem switch) to input port ReqIn of mem_coalescer
@@ -120,6 +124,10 @@ Core::Core(const SimContext& ctx,
 
     lmem_switch_.at(b)->ReqMMIOWrite.bind(&mmio_write_arb_->ReqIn.at(b));
     mmio_write_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspMMIOWrite);
+
+    // Connect each lmem_switch_ to the core-level Virgo MMIO arbiter
+    lmem_switch_.at(b)->ReqVirgoMMIO.bind(&virgo_mmio_arb_->ReqIn.at(b));
+    virgo_mmio_arb_->RspIn.at(b).bind(&lmem_switch_.at(b)->RspVirgoMMIO);
   }
 
   // connect lmem arbiter

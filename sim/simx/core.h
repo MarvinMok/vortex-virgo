@@ -162,6 +162,10 @@ public:
     return mmio_write_arb_;
   }
 
+  const LsuArbiter::Ptr& virgo_mmio_arb() const {
+    return virgo_mmio_arb_;
+  }
+
   const LocalMemSwitch::Ptr& lmem_switch(uint32_t b) const {
     return lmem_switch_.at(b);
   }
@@ -230,8 +234,9 @@ private:
   std::vector<LocalMemSwitch::Ptr> lmem_switch_;
   std::vector<MemCoalescer::Ptr> mem_coalescers_;
   LsuArbiter::Ptr lmem_arb_;
-  LsuArbiter::Ptr mmio_read_arb_;
+  LsuArbiter::Ptr mmio_read_arb_; // DMA MMIO core-level arbiters
   LsuArbiter::Ptr mmio_write_arb_;
+  LsuArbiter::Ptr virgo_mmio_arb_; // Virgo MMIO core-level arbiter
 
   PipelineLatch fetch_latch_;
   PipelineLatch decode_latch_;

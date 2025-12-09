@@ -71,6 +71,9 @@ Virgo_MatMul(const SimContext& ctx,
 
 ~Virgo_MatMul();
 
+SimPort<LsuReq> ReqIn;
+SimPort<LsuRsp> RspIn;
+
 void read(const void* data, uint64_t addr, uint32_t size);
 void write(const void* data, uint64_t addr, uint32_t size);
 void MatMul();
@@ -81,6 +84,13 @@ void tick();
 Cluster* cluster() const {
     return cluster_;
 }
+struct PerfStats {
+    uint64_t reads;
+    uint64_t writes;
+    uint64_t transfers;
+};
+
+const PerfStats& perf_stats() const;
 
 private:
     Cluster* cluster_;
@@ -92,6 +102,7 @@ private:
     MemoryUnit mmu_;
     AccumulatorMem accum_mem_;
     ScratchPadMem scratchpad_mem_;
+    PerfStats perf_stats_;
 };
 
 }

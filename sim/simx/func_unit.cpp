@@ -314,7 +314,7 @@ void LsuUnit::tick() {
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
 				if (lsu_req.mask.test(i)) {
 					auto type = get_addr_type(lsu_req.addrs.at(i));
-					if (type == AddrType::MMIO) {
+					if (type == AddrType::MMIO_VIRGO) {
 						is_mmio = true;
 						break;
 					}
