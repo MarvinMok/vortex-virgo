@@ -70,6 +70,21 @@ void ScratchPadMem::reset() {
 }
 uint64_t ScratchPadMem::size() const { return capacity_; }
 
+LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+LocalMemReader::~LocalMemReader() {}
+void LocalMemReader::tick() {}
+void LocalMemReader::reset() {}
+
+SystolicArray::SystolicArray(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+SystolicArray::~SystolicArray() {}
+void SystolicArray::tick() {}
+void SystolicArray::reset() {}
+
+SysSubArray::SysSubArray(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+SysSubArray::~SysSubArray() {}
+void SysSubArray::tick() {}
+void SysSubArray::reset() {}
+
 Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
@@ -81,6 +96,9 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , tag_table(4) // number of max in-flight matmul unit instructions
     , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
     , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
+    , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
+    , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
+    , sys_sub_array_(ctx, StrFormat("sys_sub_array%d", cluster->id()).c_str())
 {
     
 }
