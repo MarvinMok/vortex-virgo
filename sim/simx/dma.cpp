@@ -247,6 +247,8 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , ReadRspIn(this)
     , WriteReqIn(this)
     , WriteRspIn(this)
+    , MatMulReqIn(this)
+    , MatMulRspOut(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*8, 0)  
@@ -312,6 +314,8 @@ void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
                 .num_cols = write_registers.at(global_warp_id * 8 + 4),
                 .src_stride = write_registers.at(global_warp_id * 8 + 5),
                 .dst_stride = write_registers.at(global_warp_id * 8 + 6),
+                .is_accum = false,
+                .tag = 0,
             };
             tag_table.at(*d).reset();
             
@@ -422,6 +426,25 @@ void Virgo_DMA::tick() {
         WriteReqIn.pop();
     }
     
+    // MatMul Req Handling
+    if (!MatMulReqIn.empty()) {
+        auto& req = MatMulReqIn.front();
+        dma_load_t dma_load = {
+            .src_addr = req.src_addr,
+            .dst_addr = req.dst_addr,
+            .data_type_size = req.data_type_size,
+            .num_rows = req.num_rows,
+            .num_cols = req.num_cols,
+            .src_stride = req.num_cols, // Packed
+            .dst_stride = req.num_cols, // Packed
+            .is_accum = true,
+            .tag = req.tag,
+        };
+        dma_load_queue_.push(dma_load);
+        dma_transfer(dma_load);
+        MatMulReqIn.pop();
+    }
+    
     // Helper lambda to process queue
     // Process Queue
     if (!dma_load_queue_.empty()) {
@@ -484,15 +507,21 @@ void Virgo_DMA::tick() {
         std::cout << "Virgo_DMA: Rsp from GlobalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
             if (!dma_load_queue_.empty()) {
+                auto dma_load = dma_load_queue_.front();
                 dma_load_queue_.pop();
                 dma_state_.reset();
                 
-                // Decrement read registers for ALL threads in the cluster? 
-                // The original code decremented for all. Assuming this is correct for now.
-                std::cout << "Virgo_DMA: Decrementing read_registers" << std::endl;
-                for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
-                    if (read_registers.at(i) > 0)
-                        read_registers.at(i)--;
+                if (dma_load.is_accum) {
+                    MatMulDmaRsp rsp = { .tag = dma_load.tag };
+                    MatMulRspOut.push(rsp, 1);
+                } else {
+                    // Decrement read registers for ALL threads in the cluster? 
+                    // The original code decremented for all. Assuming this is correct for now.
+                    std::cout << "Virgo_DMA: Decrementing read_registers" << std::endl;
+                    for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+                        if (read_registers.at(i) > 0)
+                            read_registers.at(i)--;
+                    }
                 }
             }
         }
@@ -505,13 +534,21 @@ void Virgo_DMA::tick() {
         std::cout << "Virgo_DMA: Rsp from LocalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
             if (!dma_load_queue_.empty()) {
+                auto dma_load = dma_load_queue_.front();
                 dma_load_queue_.pop();
                 dma_state_.reset();
                 
-                std::cout << "Virgo_DMA: Decrementing read_registers" << std::endl;
-                for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
-                    if (read_registers.at(i) > 0)
-                        read_registers.at(i)--;
+                if (dma_load.is_accum) {
+                    MatMulDmaRsp rsp = { .tag = dma_load.tag };
+                    MatMulRspOut.push(rsp, 1);
+                } else {
+                    // Decrement read registers for ALL threads in the cluster? 
+                    // The original code decremented for all. Assuming this is correct for now.
+                    std::cout << "Virgo_DMA: Decrementing read_registers" << std::endl;
+                    for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+                        if (read_registers.at(i) > 0)
+                            read_registers.at(i)--;
+                    }
                 }
             }
         }

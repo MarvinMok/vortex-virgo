@@ -102,6 +102,9 @@ void attach_ram(RAM* ram);
 void reset();
 void tick();
 
+SimPort<MatMulDmaReq> DmaReqOut;
+SimPort<MatMulDmaRsp> DmaRspIn;
+
 Cluster* cluster() const {
     return cluster_;
 }
@@ -118,7 +121,6 @@ private:
     ScratchPadMem scratchpad_mem_;
     LocalMemReader local_mem_reader_;
     SystolicArray systolic_array_;
-    SysSubArray sys_sub_array_;
 };
 
 }

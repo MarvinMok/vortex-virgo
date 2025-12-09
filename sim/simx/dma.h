@@ -99,6 +99,9 @@ public:
     SimPort<LsuReq> WriteReqIn;
     SimPort<LsuRsp> WriteRspIn;
 
+    SimPort<MatMulDmaReq> MatMulReqIn;
+    SimPort<MatMulDmaRsp> MatMulRspOut;
+
     void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
 
@@ -120,6 +123,8 @@ private:
         uint32_t num_cols;
         uint32_t src_stride;
         uint32_t dst_stride;
+        bool is_accum;
+        uint32_t tag;
     } dma_load_t;
 
     void dma_transfer(const dma_load_t& dma_load);

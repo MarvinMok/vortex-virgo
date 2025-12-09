@@ -89,6 +89,8 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
                      const Arch &arch,
                      Cluster* cluster)
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
+    , DmaReqOut(this)
+    , DmaRspIn(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
@@ -98,7 +100,6 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
     , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
     , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
-    , sys_sub_array_(ctx, StrFormat("sys_sub_array%d", cluster->id()).c_str())
 {
     
 }

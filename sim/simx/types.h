@@ -753,6 +753,21 @@ struct mem_addr_size_t {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+struct MatMulDmaReq {
+    uint32_t src_addr;
+    uint32_t dst_addr;
+    uint32_t num_rows;
+    uint32_t num_cols;
+    uint32_t data_type_size;
+    uint32_t tag; 
+};
+
+struct MatMulDmaRsp {
+    uint32_t tag;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 enum class ArbiterType {
   Priority,
   RoundRobin,

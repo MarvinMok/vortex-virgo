@@ -152,6 +152,10 @@ Cluster::Cluster(const SimContext& ctx,
   dma_->local_mem_adapter()->LsuReqOut.bind(&core_arb->ReqIn.at(NUM_SOCKETS));
   core_arb->RspIn.at(NUM_SOCKETS).bind(&dma_->local_mem_adapter()->LsuRspIn);
 
+  // Connect Virgo MatMul to DMA
+  virgo_matmul_->DmaReqOut.bind(&dma_->MatMulReqIn);
+  dma_->MatMulRspOut.bind(&virgo_matmul_->DmaRspIn);
+
 }
 
 Cluster::~Cluster() {
