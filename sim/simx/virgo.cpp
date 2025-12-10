@@ -306,14 +306,22 @@ SystolicArray::SystolicArray(const SimContext& ctx, const char* name, uint32_t t
     , AccumWriteRspIn(this)
     , tile_size_(tile_size)
     , array_size_(array_size)
+    , preload_queueIn(this)
+    , preload_queueOut(this)
+    , compute_queueIn(this)
+    , compute_queueOut(this)
     , preload_active_(false)
     , compute_active_(false)
     , last_accum_(false)
     , accum_counter_(0)
     , preload_row_counter_(0)
-    , compute_cycle_(0)
-    , pending_reqs_(tile_size * array_size)
+    , compute_counter_(0)
+    , pending_scratchpad_reqs_(tile_size * array_size * 2) // a and b rows to enable pipelining
+    , pending_array_reqs_(tile_size * array_size)
+    , pending_accumulator_reqs_(tile_size * array_size)
 {
+    preload_queueOut.bind(&preload_queueIn);
+    compute_queueOut.bind(&compute_queueIn);
     sub_arrays_.resize(array_size * array_size);
     for (uint32_t r = 0; r < array_size; ++r) {
         for (uint32_t c = 0; c < array_size; ++c) {
@@ -380,14 +388,14 @@ void SystolicArray::tick() {
     // 1. Request Routing
     if (!ReqIn.empty()) {
         auto& req = ReqIn.front();
-        preload_queue_.push(req);
+        preload_queueOut.push(req);
         ReqIn.pop();
     }
 
     // 2. Preload Logic (Matrix B)
-    if (!preload_active_ && !preload_queue_.empty()) {
-        preload_req_ = preload_queue_.front();
-        preload_queue_.pop();
+    if (!preload_active_ && !preload_queueOut.empty()) {
+        preload_req_ = preload_queueOut.front();
+        preload_queueOut.pop();
         preload_active_ = true;
         preload_row_counter_ = 0;
     }
@@ -395,27 +403,25 @@ void SystolicArray::tick() {
     if (preload_active_) {
         // Issue LsuReqs for weights
         if (preload_row_counter_ < preload_req_.num_rows) {
-            if (!pending_reqs_.full()) {
-                uint32_t row = preload_row_counter_;
+            if (!pending_scratchpad_reqs_.full()) {
+                uint32_t row = preload_req_.num_rows - preload_row_counter_ - 1;
                 uint32_t cols = preload_req_.num_cols;
                 
                 LsuReq req(array_size_ * tile_size_);
                 req.write = false;
                 req.tag = 0; // Will be set by allocate
                 
-                std::vector<uint32_t> target_indices;
                 uint32_t count = 0;
 
                 for (uint32_t c = 0; c < cols && c < array_size_ * tile_size_; ++c) {
                     uint32_t addr = preload_req_.scratchpad_addr_B + (row * cols + c) * 4;
                     req.addrs[c] = addr;
                     req.mask.set(c);
-                    target_indices.push_back(c); 
                     count++;
                 }
 
                 if (count > 0) {
-                    uint32_t tag = pending_reqs_.allocate({
+                    uint32_t tag = pending_scratchpad_reqs_.allocate({
                         preload_req_.tag,
                         true, // is_weight
                         preload_row_counter_,
@@ -431,7 +437,7 @@ void SystolicArray::tick() {
         //get LsuRsps
         if (!ScratchReadRspIn.empty()) {
             auto& rsp = ScratchReadRspIn.front();
-            auto& entry = pending_reqs_.at(rsp.tag);
+            auto& entry = pending_scratchpad_reqs_.at(rsp.tag);
             
             if (entry.is_weight) {
                 entry.count -= rsp.mask.count();
@@ -443,11 +449,11 @@ void SystolicArray::tick() {
                     }
 
                     if (entry.row_num == preload_req_.num_rows - 1) {
-                        compute_queue_.push(preload_req_);
+                        compute_queueOut.push(preload_req_, tile_size_ * array_size_);
                         preload_active_ = false;
                     }
 
-                    pending_reqs_.release(rsp.tag);
+                    pending_scratchpad_reqs_.release(rsp.tag);
                 } 
                 ScratchReadRspIn.pop();
             }    
@@ -455,78 +461,65 @@ void SystolicArray::tick() {
     }
 
     // 3. Compute Logic (Matrix A)
-    if (!compute_active_ && !compute_queue_.empty()) {
-        compute_req_ = compute_queue_.front();
-        compute_queue_.pop();
+    if (!compute_active_ && !compute_queueOut.empty()) {
+        compute_req_ = compute_queueOut.front();
+        compute_queueOut.pop();
         compute_active_ = true;
-        compute_cycle_ = 0;
-        last_accum_ = false;
         accum_counter_ = 0;
+        compute_counter_ = 0;
     }
 
     if (compute_active_) {
-        // Issue LsuReqs for A (Anti-Diagonal)
-        // i + k == compute_cycle_
-        // i: row, k: col
-        // i ranges [0, num_rows), k ranges [0, num_cols)
-        
         // Only issue if we have pending slots
-        if (!pending_reqs_.full()) {
+        if (!pending_scratchpad_reqs_.full()) {
              LsuReq req(array_size_ * tile_size_);
              req.write = false;
-             req.tag = 0;
 
              uint32_t count = 0;
-             uint32_t rows = compute_req_.num_rows;
              uint32_t cols = compute_req_.num_cols;
 
-             // Iterate i to find valid (i, k) pairs
-             for (uint32_t i = 0; i < rows; ++i) {
-                 if (compute_cycle_ >= i) {
-                     uint32_t k = compute_cycle_ - i;
-                     if (k < cols) {
-                         if (count < array_size_ * tile_size_) {
-                             uint32_t addr = compute_req_.scratchpad_addr_A + (i * cols + k) * 4;
-                             req.addrs[count] = addr;
-                             req.mask.set(count);
-                             count++;
-                         }
-                     }
-                 }
+             for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
+                 uint32_t addr = compute_req_.scratchpad_addr_A + (compute_counter_ * cols + i) * 4;
+                 req.addrs[i] = addr;
+                 req.mask.set(i);
+                 count++;
              }
 
              if (count > 0) {
-                 uint32_t tag = pending_reqs_.allocate({
+                 uint32_t tag = pending_scratchpad_reqs_.allocate({
                      compute_req_.tag,
                      false, // is_weight (is A)
-                     compute_cycle_,
+                     compute_counter_,
                      count
                  });
                  req.tag = tag;
                  ScratchReadReqOut.push(req, 1);
              }
+             compute_counter_++;
          }
 
          // Handle Responses
          if (!ScratchReadRspIn.empty()) {
              auto& rsp = ScratchReadRspIn.front();
-             auto& entry = pending_reqs_.at(rsp.tag);
+             auto& entry = pending_scratchpad_reqs_.at(rsp.tag);
 
              if (!entry.is_weight) {
                  entry.count -= rsp.mask.count();
                  if (entry.count == 0) {
-                
-                     //skew already calculated
+                    uint32_t tag = pending_array_reqs_.allocate({
+                        compute_req_.tag,
+                        false,
+                        entry.row_num,
+                        array_size_ * tile_size_
+                    });
+
                     for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
-                        if (rsp.mask.test(i)) {
-                            in_a[i].push(rsp.tag);
-                            in_valid[i].push(true);
-                            flip_reg_in[i].push(rsp.tag & 1);
-                        } else {
-                            in_valid[i].push(false);
-                        }
+                        in_a[i].push(tag, i + 1);
+                        in_valid[i].push(true, i + 1);
+                        in_c[i].push(tag, i + 1);
+                        flip_reg_in[i].push(tag & 1, i + 1);
                     }
-                    pending_reqs_.release(rsp.tag);
+                    pending_scratchpad_reqs_.release(rsp.tag);
                  }
                  ScratchReadRspIn.pop();
              }
@@ -535,55 +528,53 @@ void SystolicArray::tick() {
          //Handle responses from systolic array
          for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
             if (!out_c[i].empty()) {
-                LsuReq req(array_size_ * tile_size_);
-                req.write = true;
-                uint32_t count = 0;
-                //auto& rsp = out_c[i].front();
-                auto& valid = out_valid[i].front();
-                if (valid) {
-                    req.mask.set(i);
-                    //undiagonalize
-                    req.addrs[i] = compute_req_.accum_addr + ((array_size_ * tile_size_ - 1 - count) * array_size_ * tile_size_ + (array_size_ * tile_size_ - 1 - accum_counter_)) * 4;
-                    count++;
+                uint32_t tag = out_c[i].front();
+                auto& entry = pending_array_reqs_.at(tag);
+                entry.count--;
+                if (entry.count == 0) {
+                    pending_array_reqs_.release(tag);
+                    LsuReq req(array_size_ * tile_size_);
+                    req.write = true;
+                    uint32_t count = 0;     
+                    for (uint32_t j = 0; j < array_size_ * tile_size_; ++j) {
+                        req.addrs[j] = compute_req_.accum_addr + (entry.row_num * array_size_ * tile_size_ + j) * 4;
+                        req.mask.set(j);    
+                        count++;
+                    }
+
+                    auto accum_tag = pending_accumulator_reqs_.allocate({
+                        compute_req_.tag,
+                        false,
+                        entry.row_num,
+                        count
+                    });
+                    req.tag = accum_tag;
+                    AccumWriteReqOut.push(req, 1);
                 }
-                auto tag = pending_reqs_.allocate({
-                    compute_req_.tag,
-                    false,
-                    compute_cycle_,
-                    count
-                }); 
-                req.tag = tag;
                 out_c[i].pop();
-                out_valid[i].pop();
-                AccumWriteReqOut.push(req, 1);
-                accum_counter_++;
             }
          }
 
          if (!AccumWriteRspIn.empty()) {
             auto& rsp = AccumWriteRspIn.front();
-            auto& entry = pending_reqs_.at(rsp.tag);
+            auto& entry = pending_accumulator_reqs_.at(rsp.tag);
             entry.count -= rsp.mask.count();
             if (entry.count == 0) {
-                pending_reqs_.release(rsp.tag);
-            }
-            if (rsp.mask.count() == 1) {
-                if (last_accum_) {
-                    SysArrRsp rsp;
-                    rsp.tag = compute_req_.tag;
-                    RspOut.push(rsp, 1);
+                pending_accumulator_reqs_.release(rsp.tag);
+                if (entry.row_num == compute_req_.num_rows - 1) {
                     compute_active_ = false;
                 }
-                last_accum_ = true;    
             }
          }  
-         compute_cycle_++;
     }
     
     //empty dummy ports
     for (uint32_t i = 0; i < out_a.size(); ++i) {
         if (!out_a[i].empty()) {
             out_a[i].pop();
+        }
+        if (!out_valid[i].empty()) {
+            out_valid[i].pop();
         }
         if (!out_weight[i].empty()) {
             out_weight[i].pop();
@@ -597,11 +588,13 @@ void SystolicArray::tick() {
     }
 }
 void SystolicArray::reset() {
-    while (!preload_queue_.empty()) preload_queue_.pop();
-    while (!compute_queue_.empty()) compute_queue_.pop();
+    while (!preload_queueOut.empty()) preload_queueOut.pop();
+    while (!compute_queueOut.empty()) compute_queueOut.pop();
     preload_active_ = false;
     compute_active_ = false;
-    pending_reqs_.clear();
+    pending_scratchpad_reqs_.clear();
+    pending_array_reqs_.clear();
+    pending_accumulator_reqs_.clear();
 }
 
 SysSubArray::SysSubArray(const SimContext& ctx, const char* name, uint32_t size) 

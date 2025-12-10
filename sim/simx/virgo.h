@@ -144,8 +144,10 @@ private:
     std::vector<SysSubArray::Ptr> sub_arrays_;
 
     // Queues
-    std::queue<SysArrReq> preload_queue_;
-    std::queue<SysArrReq> compute_queue_;
+    SimPort<SysArrReq> preload_queueIn;
+    SimPort<SysArrReq> preload_queueOut;
+    SimPort<SysArrReq> compute_queueIn;
+    SimPort<SysArrReq> compute_queueOut;
 
     // State Variables
     bool preload_active_;
@@ -153,7 +155,7 @@ private:
     bool last_accum_;
     uint32_t accum_counter_;
     uint32_t preload_row_counter_;
-    uint32_t compute_cycle_;
+    uint32_t compute_counter_;
     SysArrReq preload_req_;
     SysArrReq compute_req_;
 
@@ -164,7 +166,9 @@ private:
         uint32_t row_num;
         uint32_t count;
     };
-    HashTable<pending_req_t> pending_reqs_;
+    HashTable<pending_req_t> pending_scratchpad_reqs_;
+    HashTable<pending_req_t> pending_array_reqs_;
+    HashTable<pending_req_t> pending_accumulator_reqs_;
 };
 
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
