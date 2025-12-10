@@ -149,20 +149,89 @@ private:
 
 };
 
-class SystolicArray : public SimObject<SystolicArray> {
-public:
-    SystolicArray(const SimContext& ctx, const char* name);
-    ~SystolicArray();
-    void tick();
-    void reset();
-};
-
 class SysSubArray : public SimObject<SysSubArray> {
 public:
-    SysSubArray(const SimContext& ctx, const char* name);
+    SysSubArray(const SimContext& ctx, const char* name, uint32_t size);
     ~SysSubArray();
     void tick();
     void reset();
+
+    std::vector<SimPort<uint32_t>> in_a;
+    std::vector<SimPort<uint32_t>> out_a;
+    std::vector<SimPort<uint32_t>> in_c;
+    std::vector<SimPort<uint32_t>> out_c;
+    std::vector<SimPort<uint32_t>> in_weight;
+    std::vector<SimPort<uint32_t>> out_weight;
+    std::vector<SimPort<uint32_t>> load_en_in;
+    std::vector<SimPort<uint32_t>> load_en_out;
+    std::vector<SimPort<uint32_t>> flip_reg_in;
+    std::vector<SimPort<uint32_t>> flip_reg_out;
+    std::vector<SimPort<uint32_t>> in_valid;
+    std::vector<SimPort<uint32_t>> out_valid;
+
+private:
+    uint32_t size_;
+};
+
+class SystolicArray : public SimObject<SystolicArray> {
+public:
+    SystolicArray(const SimContext& ctx, const char* name, uint32_t tile_size, uint32_t array_size);
+    ~SystolicArray();
+    void tick();
+    void reset();
+
+    std::vector<SimPort<uint32_t>> in_a;
+    std::vector<SimPort<uint32_t>> in_b;
+    std::vector<SimPort<uint32_t>> in_c;
+    std::vector<SimPort<uint32_t>> out_c;
+    std::vector<SimPort<uint32_t>> load_en_in;
+    std::vector<SimPort<uint32_t>> flip_reg_in;
+    std::vector<SimPort<uint32_t>> out_a;
+    std::vector<SimPort<uint32_t>> out_weight;
+    std::vector<SimPort<uint32_t>> load_en_out;
+    std::vector<SimPort<uint32_t>> flip_reg_out;
+    std::vector<SimPort<uint32_t>> in_valid;
+    std::vector<SimPort<uint32_t>> out_valid;
+
+    // New Ports
+    SimPort<SysArrReq> ReqIn;
+    SimPort<SysArrRsp> RspOut;
+    SimPort<LsuReq> ScratchReadReqOut;
+    SimPort<LsuRsp> ScratchReadRspIn;
+    SimPort<LsuReq> AccumWriteReqOut;
+    SimPort<LsuRsp> AccumWriteRspIn;
+
+private:
+    uint32_t tile_size_;
+    uint32_t array_size_;
+    std::vector<SysSubArray::Ptr> sub_arrays_;
+
+    // Queues
+    SimPort<SysArrReq> preload_queueIn;
+    SimPort<SysArrReq> preload_queueOut;
+    SimPort<SysArrReq> compute_queueIn;
+    SimPort<SysArrReq> compute_queueOut;
+
+    // State Variables
+    bool preload_active_;
+    bool compute_active_;
+    bool last_accum_;
+    uint32_t accum_counter_;
+    uint32_t preload_row_counter_;
+    uint32_t compute_counter_;
+    SysArrReq preload_req_;
+    SysArrReq compute_req_;
+
+    // Pending Requests Tracking
+    struct pending_req_t {
+        uint32_t sys_tag;
+        bool is_weight;
+        uint32_t row_num;
+        uint32_t count;
+    };
+    HashTable<pending_req_t> pending_scratchpad_reqs_;
+    HashTable<pending_req_t> pending_array_reqs_;
+    HashTable<pending_req_t> pending_accumulator_reqs_;
 };
 
 class Virgo_MatMul : public SimObject<Virgo_MatMul> {
