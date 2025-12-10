@@ -104,10 +104,7 @@ void LocalMemSwitch::tick() {
         } else if (type == AddrType::MMIO_VIRGO) {
           out_virgo_mmio_req.mask.set(i);
           out_virgo_mmio_req.addrs.at(i) = in_req.addrs.at(i);
-
           out_virgo_mmio_rsp.mask.set(i);
-
-          has_mmio = true;
           DT(4, "Virgo MMIO LocalMemReq at 0x" << std::hex << in_req.addrs.at(i));
         }
         else {
