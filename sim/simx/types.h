@@ -766,6 +766,20 @@ struct MatMulDmaRsp {
     uint32_t tag;
 };
 
+struct SysArrReq {
+    uint32_t scratchpad_addr_A;
+    uint32_t scratchpad_addr_B;
+    uint32_t num_rows;
+    uint32_t num_cols;
+    uint32_t accum_addr;
+    uint32_t data_type;
+    uint32_t tag;
+};
+
+struct SysArrRsp {
+    uint32_t tag;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 
 enum class ArbiterType {
