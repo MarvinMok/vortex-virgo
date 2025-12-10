@@ -121,17 +121,16 @@ void tick();
 SimPort<MatMulDmaReq> DmaReqOut;
 SimPort<MatMulDmaRsp> DmaRspIn;
 
-// Exposed ports for AccumulatorMem
-SimPort<LsuReq> AccumReadReqIn;
-SimPort<LsuRsp> AccumReadRspOut;
-SimPort<LsuReq> AccumWriteReqIn;
-SimPort<LsuRsp> AccumWriteRspOut;
-
 // Exposed ports for ScratchPadMem
 SimPort<LsuReq> ScratchReadReqIn;
 SimPort<LsuRsp> ScratchReadRspOut;
 SimPort<LsuReq> ScratchWriteReqIn;
 SimPort<LsuRsp> ScratchWriteRspOut;
+
+// Exposed ports for AccumulatorMem
+AccumulatorMem* accum_mem() {
+    return &accum_mem_;
+}
 
 Cluster* cluster() const {
     return cluster_;

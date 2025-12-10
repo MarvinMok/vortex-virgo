@@ -300,10 +300,6 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
     , DmaReqOut(this)
     , DmaRspIn(this)
-    , AccumReadReqIn(this)
-    , AccumReadRspOut(this)
-    , AccumWriteReqIn(this)
-    , AccumWriteRspOut(this)
     , ScratchReadReqIn(this)
     , ScratchReadRspOut(this)
     , ScratchWriteReqIn(this)
@@ -318,12 +314,6 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
     , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
 {
-    // Bind Accumulator Ports
-    AccumReadReqIn.bind(&accum_mem_.ReadReqIn);
-    accum_mem_.ReadRspOut.bind(&AccumReadRspOut);
-    AccumWriteReqIn.bind(&accum_mem_.WriteReqIn);
-    accum_mem_.WriteRspOut.bind(&AccumWriteRspOut);
-
     // Bind ScratchPad Ports
     ScratchReadReqIn.bind(&scratchpad_mem_.ReadReqIn);
     scratchpad_mem_.ReadRspOut.bind(&ScratchReadRspOut);

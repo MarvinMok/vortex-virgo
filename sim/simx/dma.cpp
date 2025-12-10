@@ -237,6 +237,119 @@ void LocalMemAdapter::tick() {
     }
 }
 
+// AccumMemAdapter Implementation
+
+AccumMemAdapter::AccumMemAdapter(const SimContext& ctx, const char* name, uint32_t num_inputs)
+    : SimObject<AccumMemAdapter>(ctx, name)
+    , DmaReqIn(num_inputs, this)
+    , DmaRspOut(num_inputs, this)
+    , DmaReqOut(2, this) // 0: Global, 1: Local
+    , DmaRspIn(2, this)
+    , LsuReqOut(this)
+    , LsuRspIn(this)
+    , pending_reqs(LSUQ_IN_SIZE)
+{
+    char sname[100];
+    snprintf(sname, 100, "%s-arbiter", name);
+    arbiter_ = DmaArbiter::Create(sname, ArbiterType::RoundRobin, num_inputs, 1);
+
+    for (uint32_t i = 0; i < num_inputs; ++i) {
+        DmaReqIn.at(i).bind(&arbiter_->ReqIn.at(i));
+        arbiter_->RspIn.at(i).bind(&DmaRspOut.at(i));
+    }
+}
+
+AccumMemAdapter::~AccumMemAdapter() {}
+
+void AccumMemAdapter::reset() {
+    pending_reqs.clear();
+}
+
+void AccumMemAdapter::tick() {
+    // 1. Handle Incoming Requests (from Arbiter/DMA)
+    if (!arbiter_->ReqOut.at(0).empty()) {
+        auto& req = arbiter_->ReqOut.at(0).front();
+        
+        if (!pending_reqs.full()) {
+             uint32_t count = req.lsuReq.mask.count();
+             uint32_t tag = pending_reqs.allocate({
+                req.last_req, 
+                req.src_id, 
+                0, 
+                req.lsuReq.write, 
+                req.dst_addrs, 
+                count,
+                count,
+                req.tag
+            });
+
+            LsuReq lsu_req = req.lsuReq;
+            lsu_req.tag = tag;
+            // AccumMemAdapter only supports READ from Accumulator
+            lsu_req.write = false; 
+            
+            LsuReqOut.push(lsu_req, 1);
+            arbiter_->ReqOut.at(0).pop();
+        }
+    }
+
+    // 2. Handle Outgoing Responses (from MatMul)
+    if (!LsuRspIn.empty()) {
+        auto& rsp = LsuRspIn.front();
+        auto& entry = pending_reqs.at(rsp.tag);
+        entry.count -= rsp.mask.count();
+
+        if (entry.count == 0) {
+            // Full response received from Accumulator (Read Done)
+            // Now send WRITE to Destination (Global or Local)
+            
+            DmaReq req(LSU_CHANNELS);
+            req.tag = entry.tag; 
+            req.lsuReq.uuid = rsp.uuid;
+            req.lsuReq.write = true;
+            req.lsuReq.addrs = entry.dst_addrs;
+            req.last_req = entry.last_req;
+            req.src_id = entry.src_id;
+            for (uint32_t i = 0; i < entry.orig_count; ++i) {
+                req.lsuReq.mask.set(i);
+            }
+
+            // Determine target
+            // Check first address to determine type
+            // Assuming all addresses in a request go to the same memory space
+            uint64_t dst_addr = 0;
+            for(uint32_t i=0; i<LSU_CHANNELS; ++i) {
+                if(req.lsuReq.mask.test(i)) {
+                    dst_addr = req.lsuReq.addrs.at(i);
+                    break;
+                }
+            } 
+            
+            AddrType dst_type = get_addr_type(dst_addr);
+            
+            if (dst_type == AddrType::Shared) {
+                // To LocalMemAdapter (Index 1)
+                DmaReqOut.at(1).push(req, 1);
+            } else {
+                // To GlobalMemAdapter (Index 0)
+                DmaReqOut.at(0).push(req, 1);
+            }
+
+            pending_reqs.release(rsp.tag);
+        }
+        LsuRspIn.pop();
+    }
+
+    // 3. Handle Incoming Responses from Destination Adapters
+    for (uint32_t i = 0; i < DmaRspIn.size(); ++i) {
+        if (!DmaRspIn.at(i).empty()) {
+            auto& rsp = DmaRspIn.at(i).front();
+            arbiter_->RspOut.at(0).push(rsp, 1);
+            DmaRspIn.at(i).pop();
+        }
+    }
+}
+
 // Virgo_DMA Implementation
 
 Virgo_DMA::Virgo_DMA(const SimContext& ctx,
@@ -249,8 +362,6 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , WriteRspIn(this)
     , MatMulReqIn(this)
     , MatMulRspOut(this)
-    , AccumReqOut(this)
-    , AccumRspIn(this)
     , DmaLoadReqIn(this)
     , DmaLoadReqOut(this)
     , cluster_(cluster)
@@ -261,8 +372,9 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , timing_mmio_queue(arch.num_cores()*arch.num_warps(), 0)
     , perf_stats_() 
 {
-    global_mem_adapter_ = GlobalMemAdapter::Create("global_mem_adapter", 2);
-    local_mem_adapter_ = LocalMemAdapter::Create("local_mem_adapter", 2);
+    global_mem_adapter_ = GlobalMemAdapter::Create("global_mem_adapter", 3);
+    local_mem_adapter_ = LocalMemAdapter::Create("local_mem_adapter", 3);
+    accum_mem_adapter_ = AccumMemAdapter::Create("accum_mem_adapter", 1);
 
     std::cout << "Virgo_DMA: Connecting adapters..." << std::endl;
     std::cout << "global_mem_adapter_->DmaReqOut binding to local_mem_adapter_->DmaReqIn.at(1)" << std::endl;
@@ -276,6 +388,17 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     // Local -> Global
     local_mem_adapter_->DmaReqOut.bind(&global_mem_adapter_->DmaReqIn.at(1));
     global_mem_adapter_->DmaRspOut.at(1).bind(&local_mem_adapter_->DmaRspIn);
+
+    // Accum -> Global
+    accum_mem_adapter_->DmaReqOut.at(0).bind(&global_mem_adapter_->DmaReqIn.at(2));
+    global_mem_adapter_->DmaRspOut.at(2).bind(&accum_mem_adapter_->DmaRspIn.at(0));
+
+    // Accum -> Local
+    accum_mem_adapter_->DmaReqOut.at(1).bind(&local_mem_adapter_->DmaReqIn.at(2));
+    local_mem_adapter_->DmaRspOut.at(2).bind(&accum_mem_adapter_->DmaRspIn.at(1));
+
+    // Accum -> MatMul (via Virgo_DMA ports)
+    // Removed bindings to AccumReqOut and AccumRspIn as they are removed
 
     DmaLoadReqOut.bind(&DmaLoadReqIn);
 }
@@ -500,9 +623,9 @@ void Virgo_DMA::tick() {
         AddrType dst_type = get_addr_type(dma_load.dst_addr);
         bool is_global_dst = (dst_type != AddrType::Shared);
 
-        auto target_port = is_global_dst ? &local_mem_adapter_->DmaReqIn.at(0) : &global_mem_adapter_->DmaReqIn.at(0);
+        auto target_port = dma_load.is_accum ? &accum_mem_adapter_->DmaReqIn.at(0) : (is_global_dst ? &local_mem_adapter_->DmaReqIn.at(0) : &global_mem_adapter_->DmaReqIn.at(0));
         
-        DmaReq req(LSU_CHANNEL
+        DmaReq req(LSU_CHANNELS);
         req.lsuReq.tag = 0;
         static uint64_t uuid_counter = 0;
         req.lsuReq.uuid = ++uuid_counter;
@@ -536,7 +659,7 @@ void Virgo_DMA::tick() {
         }
         
         if (count > 0) {
-            std::cout << "Virgo_DMA: Target adapter is " << (is_global_dst ? "LocalMemAdapter" : "GlobalMemAdapter") << std::endl;
+            std::cout << "Virgo_DMA: Target adapter is " << (dma_load.is_accum ? "AccumMemAdapter" : (is_global_dst ? "LocalMemAdapter" : "GlobalMemAdapter")) << std::endl;
             std::cout << "Virgo_DMA: Pushing req to adapter. last_req=" << req.last_req << " is_global_dst=" << is_global_dst << " count=" << count << std::endl;
             for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
                 std::cout << "Virgo_DMA: req.addrs.at(" << i << ")=" << req.lsuReq.addrs.at(i) << std::endl;
@@ -598,6 +721,25 @@ void Virgo_DMA::tick() {
             }
         }
         local_mem_adapter_->DmaRspOut.at(0).pop();
+    }
+
+    // Handle Responses from AccumMemAdapter
+    if (!accum_mem_adapter_->DmaRspOut.at(0).empty()) {
+        auto& rsp = accum_mem_adapter_->DmaRspOut.at(0).front();
+        std::cout << "Virgo_DMA: Rsp from AccumMemAdapter last_req=" << rsp.last_req << std::endl;
+        if (rsp.last_req) {
+            if (!DmaLoadReqIn.empty()) {
+                auto dma_load = DmaLoadReqIn.front();
+                DmaLoadReqIn.pop();
+                dma_state_.reset();
+                
+                if (dma_load.is_accum) {
+                    MatMulDmaRsp rsp = { .tag = dma_load.tag };
+                    MatMulRspOut.push(rsp, 1);
+                }
+            }
+        }
+        accum_mem_adapter_->DmaRspOut.at(0).pop();
     }
 }
 

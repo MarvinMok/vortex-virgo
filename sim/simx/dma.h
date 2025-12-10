@@ -79,6 +79,38 @@ private:
     HashTable<pending_req_t> pending_reqs;
 };
 
+class AccumMemAdapter : public SimObject<AccumMemAdapter> {
+public:
+    std::vector<SimPort<DmaReq>> DmaReqIn;   // From Virgo_DMA
+    std::vector<SimPort<DmaRsp>> DmaRspOut;  // To Virgo_DMA
+    std::vector<SimPort<DmaReq>> DmaReqOut;  // To Global/Local MemAdapter
+    std::vector<SimPort<DmaRsp>> DmaRspIn;   // From Global/Local MemAdapter
+
+    SimPort<LsuReq> LsuReqOut;               // To MatMul (Accumulator)
+    SimPort<LsuRsp> LsuRspIn;                // From MatMul (Accumulator)
+
+    AccumMemAdapter(const SimContext& ctx, const char* name, uint32_t num_inputs);
+    ~AccumMemAdapter();
+
+    void reset();
+    void tick();
+
+    DmaArbiter::Ptr arbiter_;
+
+private:
+    struct pending_req_t {
+        bool last_req;
+        uint32_t src_id;
+        uint32_t input_port;
+        bool write;
+        std::vector<uint64_t> dst_addrs;
+        uint32_t count;
+        uint32_t orig_count;
+        uint64_t tag;
+    };
+    HashTable<pending_req_t> pending_reqs;
+};
+
 class Virgo_DMA : public SimObject<Virgo_DMA> {
 public:
 
@@ -102,9 +134,6 @@ public:
     SimPort<MatMulDmaReq> MatMulReqIn;
     SimPort<MatMulDmaRsp> MatMulRspOut;
 
-    SimPort<LsuReq> AccumReqOut;
-    SimPort<LsuRsp> AccumRspIn;
-
     void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
 
@@ -117,6 +146,7 @@ public:
 
     const GlobalMemAdapter::Ptr& global_mem_adapter() const { return global_mem_adapter_; }
     const LocalMemAdapter::Ptr& local_mem_adapter() const { return local_mem_adapter_; }
+    const AccumMemAdapter::Ptr& accum_mem_adapter() const { return accum_mem_adapter_; }
 private:
     struct dma_load_t {
         uint32_t src_addr;
@@ -160,6 +190,7 @@ private:
     DmaState dma_state_;
     GlobalMemAdapter::Ptr global_mem_adapter_;
     LocalMemAdapter::Ptr local_mem_adapter_;
+    AccumMemAdapter::Ptr accum_mem_adapter_;
 
 };
 
