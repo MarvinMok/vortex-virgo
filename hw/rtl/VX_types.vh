@@ -184,7 +184,7 @@
 `define VX_CSR_MPM_COALESCER_MISS       12'hB1F     // coalescer misses
 `define VX_CSR_MPM_COALESCER_MISS_H     12'hB9F
 
-// PERF: dma
+// PERF: dma + virgo matmul
 `define VX_CSR_MPM_DMA_READS            12'hB03     // dma reads
 `define VX_CSR_MPM_DMA_READS_H          12'hB83
 `define VX_CSR_MPM_DMA_WRITES           12'hB04     // dma writes
@@ -195,6 +195,15 @@
 `define VX_CSR_MPM_DMA_READ_LT_H        12'hB86
 `define VX_CSR_MPM_DMA_WRITE_LT         12'hB07     // dma write latency
 `define VX_CSR_MPM_DMA_WRITE_LT_H       12'hB87
+// virgo
+`define VX_CSR_MPM_VIRGO_MM_READS       12'hB08
+`define VX_CSR_MPM_VIRGO_MM_READS_H     12'hB88
+`define VX_CSR_MPM_VIRGO_MM_TRANSFERS   12'hB09     // num of MM ops
+`define VX_CSR_MPM_VIRGO_MM_TRANSFERS_H 12'hB89
+`define VX_CSR_MPM_VIRGO_MM_WRITES      12'hB0A
+`define VX_CSR_MPM_VIRGO_MM_WRITES_H    12'hB8A
+`define VX_CSR_MPM_VIRGO_MM_READ_LT     12'hB0B     
+`define VX_CSR_MPM_VIRGO_MM_READ_LT_H   12'hB8B
 
 // <Add your own counters: use addresses hB03..B1F, hB83..hB9F>
 
