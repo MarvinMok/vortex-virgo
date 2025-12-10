@@ -84,6 +84,38 @@ public:
     ~LocalMemReader();
     void tick();
     void reset();
+
+    SimPort<LsuReq> ReqIn; // from MatMul Virgo Controller
+    SimPort<LsuRsp> RspIn; // make custom data structure for requests/responses from Virgo Controller
+
+    SimPort<LsuReq> CoreArbReqOut; // to CoreArbiter
+    SimPort<LsuRsp> CoreArbRspOut;
+
+    SimPort<LsuReq> ScratchpadReqOut; // to scratchpad
+    SimPort<LsuRsp> ScratchpadRspOut;
+
+    SimPort<virgo_queue_t> VirgoReqIn; // receive requests from Virgo MM controller
+    SimPort<virgo_queue_t> VirgoRspIn;
+
+private:
+    struct pending_req_t {
+        bool is_last_req; // last row in the req
+        std::vector<uint64_t> addrs;
+        uint32_t count;
+        uint32_t orig_count;
+    };
+
+    struct LMemState {
+        uint32_t row; // which row are we on?
+        bool done;
+        LMemState() : row(0), done(false) {}
+        void reset() { row = 0; done = false; }
+    };
+    LMemState lmem_state_A_; // need one for A and B matrixes
+    LMemState lmem_state_B_;
+
+    HashTable<pending_req_t> pending_reqs;
+
 };
 
 class SystolicArray : public SimObject<SystolicArray> {
@@ -111,24 +143,23 @@ Virgo_MatMul(const SimContext& ctx,
 
 ~Virgo_MatMul();
 
-SimPort<LsuReq> ReqIn;
-SimPort<LsuRsp> RspIn;
-
-void read(const void* data, uint64_t addr, uint32_t size);
-void write(const void* data, uint64_t addr, uint32_t size);
-void MatMul();
-void attach_ram(RAM* ram);
-void reset();
-void tick();
+SimPort<LsuReq> ReqIn; // MMIO req in
+SimPort<LsuRsp> RspIn; // MMIO response
 
 SimPort<MatMulDmaReq> DmaReqOut;
 SimPort<MatMulDmaRsp> DmaRspIn;
 
-// Exposed ports for ScratchPadMem
-SimPort<LsuReq> ScratchReadReqIn;
-SimPort<LsuRsp> ScratchReadRspOut;
-SimPort<LsuReq> ScratchWriteReqIn;
-SimPort<LsuRsp> ScratchWriteRspOut;
+SimPort<virgo_queue_t> LMemReqOut;
+SimPort<virgo_queue_t> LMemRspOut; // might change the types
+
+void read(const void* data, uint64_t addr, uint32_t size);
+void write(const void* data, uint64_t addr, uint32_t size);
+void MatMul(const virgo_queue_t& virgo_queue_entry);
+void attach_ram(RAM* ram);
+void reset();
+void tick();
+
+
 
 // Exposed ports for AccumulatorMem
 AccumulatorMem* accum_mem() {
@@ -137,6 +168,14 @@ AccumulatorMem* accum_mem() {
 
 Cluster* cluster() const {
     return cluster_;
+}
+
+const LocalMemReader::Ptr& local_mem_reader() const {
+    return local_mem_reader_;
+}
+
+const ScratchPadMem::Ptr& scratchpad_mem() const {
+    return scratchpad_mem_;
 }
 struct PerfStats {
     uint64_t reads;
@@ -155,8 +194,8 @@ private:
     std::queue<virgo_queue_t> virgo_compute_queue_;
     MemoryUnit mmu_;
     AccumulatorMem accum_mem_;
-    ScratchPadMem scratchpad_mem_;
-    LocalMemReader local_mem_reader_;
+    ScratchPadMem::Ptr scratchpad_mem_;
+    LocalMemReader::Ptr local_mem_reader_;
     SystolicArray systolic_array_;
     PerfStats perf_stats_;
 };

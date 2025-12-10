@@ -88,7 +88,7 @@ Cluster::Cluster(const SimContext& ctx,
 
   // create Core Arbiter (type MemArbiter), one output
   snprintf(sname, 100, "%s-core_arb", this->name().c_str());
-  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS + 1, 1);
+  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS + 2, 1); // + 2 , one for DMA, one for LocalMemReader in Virgo_MatMul
 
   // create lmem adapter
   snprintf(sname, 100, "%s-lsu_lmem_adapter", this->name().c_str());
@@ -163,13 +163,17 @@ Cluster::Cluster(const SimContext& ctx,
   dma_->local_mem_adapter()->LsuReqOut.bind(&core_arb->ReqIn.at(NUM_SOCKETS));
   core_arb->RspIn.at(NUM_SOCKETS).bind(&dma_->local_mem_adapter()->LsuRspIn);
 
+  // Connect Virgo MatMul LocalMemReader to CoreArbiter
+  virgo_matmul_->local_mem_reader()->CoreArbReqOut.bind(&core_arb->ReqIn.at(NUM_SOCKETS + 1));
+  core_arb->RspIn.at(NUM_SOCKETS + 1).bind(&virgo_matmul_->local_mem_reader()->CoreArbRspOut);
+
   // Connect Virgo MatMul to DMA
   virgo_matmul_->DmaReqOut.bind(&dma_->MatMulReqIn);
   dma_->MatMulRspOut.bind(&virgo_matmul_->DmaRspIn);
 
-    // Connect DMA to Accumulator (in Virgo MatMul)
-    dma_->accum_mem_adapter()->LsuReqOut.bind(&virgo_matmul_->accum_mem()->ReadReqIn);
-    virgo_matmul_->accum_mem()->ReadRspOut.bind(&dma_->accum_mem_adapter()->LsuRspIn);
+  // Connect DMA to Accumulator (in Virgo MatMul)
+  dma_->accum_mem_adapter()->LsuReqOut.bind(&virgo_matmul_->accum_mem()->ReadReqIn);
+  virgo_matmul_->accum_mem()->ReadRspOut.bind(&dma_->accum_mem_adapter()->LsuRspIn);
 
 }
 

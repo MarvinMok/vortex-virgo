@@ -136,8 +136,8 @@ void ScratchPadMem::tick() {
         auto& req = WriteReqIn.front();
         // Assert address adjacency
         uint64_t base_addr = req.addrs[0];
-        if (!req.mask.all()) {
-            std::cout << "Error: AccumulatorMem WriteReq mask not all valid!" << std::endl;
+        if (!req.mask.all()) { // signifies that the LsuReq contains the maximum number of memory addresses (which we want)
+            std::cout << "Error: ScratchPadMem WriteReq mask not all valid!" << std::endl;
             std::abort();
         }
         for (size_t i = 1; i < req.addrs.size(); ++i) {
@@ -279,10 +279,146 @@ void ScratchPadMem::reset() {
 }
 uint64_t ScratchPadMem::size() const { return capacity_; }
 
-LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
+LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name) 
+    : SimObject(ctx, name) 
+    , ReqIn(this)
+    , RspIn(this)
+    , CoreArbReqOut(this) // to CoreArbiter
+    , CoreArbRspOut(this)
+    , ScratchpadReqOut(this) // to scratchpad
+    , ScratchpadRspOut(this)
+    , VirgoReqIn(this) // reqs from Virgo MM controller
+    , VirgoRspIn(this)
+    , pending_reqs(16) // 16 for Safety!
+{
+
+}
+
 LocalMemReader::~LocalMemReader() {}
-void LocalMemReader::tick() {}
-void LocalMemReader::reset() {}
+
+/* typedef struct {
+uint32_t src_addr_A;
+uint32_t src_addr_B;
+uint32_t dst_addr;
+uint32_t data_type;
+uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
+uint32_t num_cols_A; 
+uint32_t num_cols_B;
+uint32_t accum_addr;
+uint32_t tag;
+bool store;
+bool accum;
+} virgo_queue_t; 
+*/
+
+/* BitVector<> mask;
+std::vector<uint64_t> addrs;
+bool     write;
+uint32_t tag;
+uint32_t cid;
+uint64_t uuid; 
+LsuReq type */
+
+void LocalMemReader::tick() {
+    if (!VirgoReqIn.empty()) {
+        auto& virgo_req = VirgoReqIn.front(); // type virgo_queue_t
+        LsuReq req(LSU_CHANNELS); // first need to "read" from local memory, generate separate LsuReqs for each row of the A and B matrixes
+
+        uint32_t data_type_size;
+        if (virgo_req.data_type == FP32) {
+            data_type_size = 4; // FP32
+        } else {
+            data_type_size = 2; // fp16
+        }
+
+        // generate one LSU req per cycle, iterate over each row of the A matrix every cycle till done.
+        if (!lmem_state_A_.done) {
+            for (uint32_t col_num = 0; col_num < virgo_req.num_cols_A; ++col_num) {
+                uint32_t src_index = lmem_state_A_.row * virgo_req.num_cols_A + col_num;
+                uint64_t src_addr = virgo_req.src_addr_A + src_index * data_type_size;
+
+                req.mask.set(col_num);
+                req.addrs.at(col_num) = src_addr;
+            }
+
+            req.write = false;
+            bool is_last_req = false;
+            if (lmem_state_A_.row == virgo_req.num_rows_A - 1) {
+                lmem_state_A_.done = true;
+                is_last_req = true;
+            }
+            uint32_t count = req.mask.count();
+
+            uint32_t tag = pending_reqs.allocate({
+                is_last_req, 
+                req.addrs, 
+                count,
+                count,
+            });
+            req.tag = tag;
+            
+            // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
+            CoreArbReqOut.push(req); // default delay of 1 cycle
+            lmem_state_A_.row++;
+        }
+        else if (!lmem_state_B_.done) { // lmem_state_A_m.done == true, can move onto the B matrix
+            for (uint32_t col_num = 0; col_num < virgo_req.num_cols_B; ++col_num) {
+                uint32_t src_index = lmem_state_B_.row * virgo_req.num_cols_B + col_num;
+                uint64_t src_addr = virgo_req.src_addr_B + src_index * data_type_size;
+
+                req.mask.set(col_num);
+                req.addrs.at(col_num) = src_addr;
+            }
+
+            req.write = false;
+            bool is_last_req = false;
+            if (lmem_state_B_.row == virgo_req.num_cols_A - 1) {
+                lmem_state_B_.done = true;
+                is_last_req = true;
+            }
+            uint32_t count = req.mask.count();
+
+            uint32_t tag = pending_reqs.allocate({
+                is_last_req, 
+                req.addrs, 
+                count,
+                count,
+            });
+            req.tag = tag;
+            
+            // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
+            CoreArbReqOut.push(req); // default delay of 1 cycle
+            lmem_state_B_.row++;
+        }
+
+        if (lmem_state_A_.done && lmem_state_B_.done) {
+            VirgoReqIn.pop(); // finally remove from queue
+            lmem_state_A_.reset();
+            lmem_state_B_.reset();
+        }
+    }
+
+    if (!CoreArbRspOut.empty()) { // we've received a response all the way from local mem
+        auto& rsp = CoreArbRspOut.front();
+        auto& entry = pending_reqs.at(rsp.tag);
+
+        entry.count -= rsp.mask.count();
+
+        if (count == 0) {
+
+            //stuff
+
+            // write to scratchpad
+        }
+
+        CoreArbRspOut.pop();
+    }
+
+}
+
+void LocalMemReader::reset() {
+    // todo - this
+}
 
 SystolicArray::SystolicArray(const SimContext& ctx, const char* name) : SimObject(ctx, name) {}
 SystolicArray::~SystolicArray() {}
@@ -302,26 +438,27 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , RspIn(this)
     , DmaReqOut(this)
     , DmaRspIn(this)
-    , ScratchReadReqIn(this)
-    , ScratchReadRspOut(this)
-    , ScratchWriteReqIn(this)
-    , ScratchWriteRspOut(this)
+    , LMemReqOut(this)
+    , LMemRspOut(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
     , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
     , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
-    , scratchpad_mem_(ctx, StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
-    , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
     , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
     , perf_stats_()
 {
-    // Bind ScratchPad Ports
-    ScratchReadReqIn.bind(&scratchpad_mem_.ReadReqIn);
-    scratchpad_mem_.ReadRspOut.bind(&ScratchReadRspOut);
-    ScratchWriteReqIn.bind(&scratchpad_mem_.WriteReqIn);
-    scratchpad_mem_.WriteRspOut.bind(&ScratchWriteRspOut);
+    scratchpad_mem_ = ScratchPadMem::Create(StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE);
+    local_mem_reader_ = LocalMemReader::Create(StrFormat("local_mem_reader%d", cluster->id()).c_str());
+
+    // bind localmemreader and scratchpad
+    local_mem_reader()->ScratchpadReqOut.bind(&scratchpad_mem()->WriteReqIn);
+    scratchpad_mem()->WriteRspOut.bind(&local_mem_reader()->ScratchpadRspOut);
+
+    // bind to local_mem_reader
+    LMemReqOut.bind(&local_mem_reader()->VirgoReqIn);
+    local_mem_reader()->VirgoRspIn.bind(&LMemRspOut);
 }
 
 Virgo_MatMul::~Virgo_MatMul() {}
@@ -361,7 +498,7 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
             bool accum = (accum_addr >> 31) & 1;
             bool store = (accum_addr >> 30) & 1;
             accum_addr = accum_addr & 0x7FFF;
-            virgo_queue_t virgo_compute = {
+            virgo_queue_t virgo_compute_entry = {
                 .src_addr_A = write_registers.at(global_warp_id * 9 + 0),
                 .src_addr_B = write_registers.at(global_warp_id * 9 + 1),
                 .dst_addr = write_registers.at(global_warp_id * 9 + 2),
@@ -376,25 +513,22 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
             };
 
             tag_table.at(tag).reset();
-            virgo_compute_queue_.push(virgo_compute); // add to queue
+            virgo_compute_queue_.push(virgo_compute_entry); // add to queue, for timing
 
             perf_stats_.transfers++;
-            MatMul();
+            MatMul(virgo_compute_entry); // matmul directly
         }
     }   
 }
 
-void Virgo_MatMul::MatMul() {
-    auto virgo_compute = virgo_compute_queue_.front();
-    virgo_compute_queue_.pop();
-
-    uint64_t src_addr_A = static_cast<uint64_t>(virgo_compute.src_addr_A);
-    uint64_t src_addr_B = static_cast<uint64_t>(virgo_compute.src_addr_B);
-    uint64_t dst_addr = static_cast<uint64_t>(virgo_compute.dst_addr);
-    uint32_t data_type = virgo_compute.data_type;
-    uint32_t num_rows_A = virgo_compute.num_rows_A;
-    uint32_t num_cols_A = virgo_compute.num_cols_A;
-    uint32_t num_cols_B = virgo_compute.num_cols_B;
+void Virgo_MatMul::MatMul(const virgo_queue_t& virgo_compute_entry) {
+    uint64_t src_addr_A = static_cast<uint64_t>(virgo_compute_entry.src_addr_A);
+    uint64_t src_addr_B = static_cast<uint64_t>(virgo_compute_entry.src_addr_B);
+    uint64_t dst_addr = static_cast<uint64_t>(virgo_compute_entry.dst_addr);
+    uint32_t data_type = virgo_compute_entry.data_type;
+    uint32_t num_rows_A = virgo_compute_entry.num_rows_A;
+    uint32_t num_cols_A = virgo_compute_entry.num_cols_A;
+    uint32_t num_cols_B = virgo_compute_entry.num_cols_B;
 
     auto src_addr_A_type = get_addr_type(src_addr_A);
     auto src_addr_B_type = get_addr_type(src_addr_B);
@@ -405,8 +539,8 @@ void Virgo_MatMul::MatMul() {
         for (uint32_t i = 0; i < num_rows_A; i++) { // loop over rows of matrix A
             for (uint32_t j = 0; j < num_cols_B; j++) { // Loop over columns of matrix B
                 float sum = 0;
-                if (virgo_compute.accum) {
-                    uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
+                if (virgo_compute_entry.accum) {
+                    uint32_t offset = virgo_compute_entry.accum_addr + (i * num_cols_B + j) * 4;
                     if (offset + 4 <= accum_mem_.size()) {
                         accum_mem_.read(&sum, offset, 4);
                     } else {
@@ -424,9 +558,9 @@ void Virgo_MatMul::MatMul() {
                         std::cout << "Error: Can only read source matrix A from shared memory" << std::endl;
                     }
                     // Write A to scratchpad
-                    uint32_t offset_A = virgo_compute.tag * 128 + (i * num_cols_A + k) * 4;
-                    if (offset_A + 4 <= scratchpad_mem_.size()) {
-                        scratchpad_mem_.write(&aVal, offset_A, 4);
+                    uint32_t offset_A = virgo_compute_entry.tag * 128 + (i * num_cols_A + k) * 4;
+                    if (offset_A + 4 <= scratchpad_mem_->size()) {
+                        scratchpad_mem_->write(&aVal, offset_A, 4);
                     } else {
                         std::cout << "Error: Scratchpad memory write A out of bounds at offset " << offset_A << std::endl;
                     }
@@ -437,9 +571,9 @@ void Virgo_MatMul::MatMul() {
                         std::cout << "Error: Can only read source matrix A from shared memory" << std::endl;
                     }
                     // Write B to scratchpad
-                    uint32_t offset_B = virgo_compute.tag * 128 + 64 + (k * num_cols_B + j) * 4;
-                    if (offset_B + 4 <= scratchpad_mem_.size()) {
-                        scratchpad_mem_.write(&bVal, offset_B, 4);
+                    uint32_t offset_B = virgo_compute_entry.tag * 128 + 64 + (k * num_cols_B + j) * 4;
+                    if (offset_B + 4 <= scratchpad_mem_->size()) {
+                        scratchpad_mem_->write(&bVal, offset_B, 4);
                     } else {
                         std::cout << "Error: Scratchpad memory write B out of bounds at offset " << offset_B << std::endl;
                     }
@@ -451,14 +585,14 @@ void Virgo_MatMul::MatMul() {
                 // Store result in destination matrix C
                 // dest_addr[i * num_cols_B + j] = sum;
                 // Store result back to accumulator memory
-                uint32_t offset = virgo_compute.accum_addr + (i * num_cols_B + j) * 4;
+                uint32_t offset = virgo_compute_entry.accum_addr + (i * num_cols_B + j) * 4;
                 if (offset + 4 <= accum_mem_.size()) {
                     accum_mem_.write(&sum, offset, 4);
                 } else {
                     std::cout << "Error: Accumulator memory write out of bounds at offset " << offset << std::endl;
                 }
 
-                if (virgo_compute.store) {
+                if (virgo_compute_entry.store) {
                     if (dst_addr_type == AddrType::Shared) {
                         cluster_->local_mem()->write(static_cast<void*>(&sum), static_cast<uint64_t>(dst_addr + (i * num_cols_B + j) * 4), 4);
                     } else {
@@ -500,9 +634,9 @@ void Virgo_MatMul::attach_ram(RAM* ram) {
 void Virgo_MatMul::reset() {
 }
 
+// Virgo MatMul controller
 void Virgo_MatMul::tick() {
-    // for TIMING simulation, where we'll actually make the matrix multiply a systolic array
-    if (!ReqIn.empty()) {
+    if (!ReqIn.empty()) { // ReqIn for MMIO
         auto& req = ReqIn.front();
         std::cout << "Virgo Matmul Tick: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
         LsuRsp rsp(LSU_CHANNELS);
@@ -512,6 +646,27 @@ void Virgo_MatMul::tick() {
         rsp.mask = req.mask;
         RspIn.push(rsp, 1);
         ReqIn.pop();
+    }
+
+    // typedef struct {
+    // uint32_t src_addr_A;
+    // uint32_t src_addr_B;
+    // uint32_t dst_addr;
+    // uint32_t data_type;
+    // uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
+    // uint32_t num_cols_A; 
+    // uint32_t num_cols_B;
+    // uint32_t accum_addr;
+    // uint32_t tag;
+    // bool store;
+    // bool accum;
+    // } virgo_queue_t;
+    if (!virgo_compute_queue_.empty()) {
+        auto virgo_compute_entry = virgo_compute_queue_.front();
+        
+
+
+
     }
 }
 
