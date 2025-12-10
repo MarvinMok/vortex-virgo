@@ -26,9 +26,19 @@ typedef struct {
     uint32_t  tag;
     bool store;
     bool accum;
-} virgo_queue_t;
+} virgo_req_t;
+
+typedef struct {
+    uint64_t scratchpad_src_addr_A;
+    uint64_t scratchpad_src_addr_B;
+} virgo_rsp_t;
 
 #define SCRATCHPAD_BANKS NUM_LSU_LANES
+
+#define SCRATCHPAD_TILE_A_1 0
+#define SCRATCHPAD_TILE_B_1 1024
+#define SCRATCHPAD_TILE_A_2 2048
+#define SCRATCHPAD_TILE_B_2 3072
 
 class AccumulatorMem : public SimObject<AccumulatorMem> {
 public:
@@ -94,13 +104,16 @@ public:
     SimPort<LsuReq> ScratchpadReqOut; // to scratchpad
     SimPort<LsuRsp> ScratchpadRspOut;
 
-    SimPort<virgo_queue_t> VirgoReqIn; // receive requests from Virgo MM controller
-    SimPort<virgo_queue_t> VirgoRspIn;
+    SimPort<virgo_req_t> VirgoReqIn; // receive requests from Virgo MM controller
+    SimPort<virgo_rsp_t> VirgoRspIn;
 
 private:
     struct pending_req_t {
         bool is_last_req; // last row in the req
+        bool is_A;
+        bool workload; // 0 for first set of A/B tiles, 1 for 2nd set of A/B tiles
         std::vector<uint64_t> addrs;
+        uint32_t row;
         uint32_t count;
         uint32_t orig_count;
     };
@@ -111,10 +124,28 @@ private:
         LMemState() : row(0), done(false) {}
         void reset() { row = 0; done = false; }
     };
+
+    struct ScratchpadState {
+        uint32_t is_last_req_count; // 2 for both A & B tiles
+        // bool workload;
+        uint64_t scratchpad_address_A_;
+        uint64_t scratchpad_address_B_;
+        ScratchpadState() : is_last_req_count(0) {}
+        void reset() { 
+            is_last_req_count = 0;
+            // workload = !workload; 
+            scratchpad_address_A_ = 0;
+            scratchpad_address_B_ = 0;
+        }
+    };
+
     LMemState lmem_state_A_; // need one for A and B matrixes
     LMemState lmem_state_B_;
+    bool lmem_workload_ = 0;
+    ScratchpadState scratchpad_state_;
 
-    HashTable<pending_req_t> pending_reqs;
+    HashTable<pending_req_t> lmem_pending_reqs_;
+    HashTable<pending_req_t> scratchpad_pending_reqs_;
 
 };
 
@@ -149,17 +180,15 @@ SimPort<LsuRsp> RspIn; // MMIO response
 SimPort<MatMulDmaReq> DmaReqOut;
 SimPort<MatMulDmaRsp> DmaRspIn;
 
-SimPort<virgo_queue_t> LMemReqOut;
-SimPort<virgo_queue_t> LMemRspOut; // might change the types
+SimPort<virgo_req_t> LMemReqOut;
+SimPort<virgo_rsp_t> LMemRspOut; // might change the types
 
 void read(const void* data, uint64_t addr, uint32_t size);
 void write(const void* data, uint64_t addr, uint32_t size);
-void MatMul(const virgo_queue_t& virgo_queue_entry);
+void MatMul(const virgo_req_t& virgo_queue_entry);
 void attach_ram(RAM* ram);
 void reset();
 void tick();
-
-
 
 // Exposed ports for AccumulatorMem
 AccumulatorMem* accum_mem() {
@@ -191,13 +220,15 @@ private:
     std::vector<uint32_t> write_registers;
     std::vector<uint32_t> read_registers;
     std::vector<std::bitset<32>> tag_table;
-    std::queue<virgo_queue_t> virgo_compute_queue_;
+    std::queue<virgo_req_t> virgo_req_queue_;
+    std::queue<virgo_rsp_t> virgo_rsp_queue_;
     MemoryUnit mmu_;
     AccumulatorMem accum_mem_;
     ScratchPadMem::Ptr scratchpad_mem_;
     LocalMemReader::Ptr local_mem_reader_;
     SystolicArray systolic_array_;
     PerfStats perf_stats_;
+    bool inflight_inst;
 };
 
 }

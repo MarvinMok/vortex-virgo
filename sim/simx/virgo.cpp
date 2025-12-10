@@ -289,7 +289,8 @@ LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name)
     , ScratchpadRspOut(this)
     , VirgoReqIn(this) // reqs from Virgo MM controller
     , VirgoRspIn(this)
-    , pending_reqs(16) // 16 for Safety!
+    , lmem_pending_reqs_(16) // 16 for Safety!
+    , scratchpad_pending_reqs_(16) // 16 for Safety!
 {
 
 }
@@ -310,14 +311,6 @@ bool store;
 bool accum;
 } virgo_queue_t; 
 */
-
-/* BitVector<> mask;
-std::vector<uint64_t> addrs;
-bool     write;
-uint32_t tag;
-uint32_t cid;
-uint64_t uuid; 
-LsuReq type */
 
 void LocalMemReader::tick() {
     if (!VirgoReqIn.empty()) {
@@ -349,15 +342,19 @@ void LocalMemReader::tick() {
             }
             uint32_t count = req.mask.count();
 
-            uint32_t tag = pending_reqs.allocate({
+            uint32_t tag = lmem_pending_reqs_.allocate({
                 is_last_req, 
-                req.addrs, 
+                true, // is A
+                lmem_workload_,
+                req.addrs,
+                lmem_state_A_.row,
                 count,
                 count,
             });
             req.tag = tag;
             
             // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
+            std::cout << "LocalMemReader: Sending LsuReq for Matrix A row=" << lmem_state_A_.row << ", tag=" << req.tag << std::endl;
             CoreArbReqOut.push(req); // default delay of 1 cycle
             lmem_state_A_.row++;
         }
@@ -378,15 +375,19 @@ void LocalMemReader::tick() {
             }
             uint32_t count = req.mask.count();
 
-            uint32_t tag = pending_reqs.allocate({
+            uint32_t tag = lmem_pending_reqs_.allocate({
                 is_last_req, 
-                req.addrs, 
+                false, // is B
+                lmem_workload_,
+                req.addrs,
+                lmem_state_B_.row,
                 count,
                 count,
             });
             req.tag = tag;
             
             // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
+            std::cout << "LocalMemReader: Sending LsuReq for Matrix B row=" << lmem_state_B_.row << ", tag=" << req.tag << std::endl;
             CoreArbReqOut.push(req); // default delay of 1 cycle
             lmem_state_B_.row++;
         }
@@ -395,26 +396,111 @@ void LocalMemReader::tick() {
             VirgoReqIn.pop(); // finally remove from queue
             lmem_state_A_.reset();
             lmem_state_B_.reset();
+            lmem_workload_ = !lmem_workload_; // flip workload bit
         }
     }
 
-    if (!CoreArbRspOut.empty()) { // we've received a response all the way from local mem
+    // important: scratchpad operations happen IN ORDER.
+    if (!CoreArbRspOut.empty()) { // we've received a response all the way from local mem, can write to scratchpad
         auto& rsp = CoreArbRspOut.front();
-        auto& entry = pending_reqs.at(rsp.tag);
+        auto& entry = lmem_pending_reqs_.at(rsp.tag);
 
-        entry.count -= rsp.mask.count();
+        std::cout << "LocalMemReader: Received CoreArbRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
+        entry.count -= rsp.mask.count(); // response mask contains how many of the addresses have been serviced
+        std::cout << "LocalMemReader: Updated COREARB count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
 
-        if (count == 0) {
-
-            //stuff
-
+        if (entry.count == 0) {
             // write to scratchpad
+            LsuReq req(entry.addrs.size());
+            req.write = true;
+            for (uint32_t i = 0; i < entry.addrs.size(); ++i) {
+                req.mask.set(i);
+            }
+
+            std::vector<uint64_t> addrs;
+            for (uint32_t col_num = 0; col_num < entry.addrs.size(); ++col_num) {
+                uint64_t index = entry.row * entry.addrs.size() + col_num;
+                uint64_t data_type_size = entry.addrs.at(1) - entry.addrs.at(0);
+
+                uint64_t base_address;
+                if (!entry.workload) { // first workload
+                    base_address = (entry.is_A) ? SCRATCHPAD_TILE_A_1 : SCRATCHPAD_TILE_B_1;
+                } else {
+                    base_address = (entry.is_A) ? SCRATCHPAD_TILE_A_2 : SCRATCHPAD_TILE_B_2;
+                }
+                uint64_t addr = base_address + index * data_type_size;
+                addrs.at(col_num) = addr; // add to addrs vector
+            }
+
+            uint32_t tag = scratchpad_pending_reqs_.allocate({
+                entry.is_last_req,
+                entry.is_A,
+                entry.workload, // unused???
+                addrs, // create new addrs
+                entry.row,
+                entry.addrs.size(),
+                entry.addrs.size()
+            });
+            req.tag = tag;
+
+            // finally, send LsuReq to Scratchpad
+            std::cout << "LocalMemReader: Sending LsuReq to Scratchpad for Matrix " << entry.is_A << ", row=" << entry.row << ", tag=" << req.tag << std::endl;
+            ScratchpadReqOut.push(req); // default delay of 1 cycle
+            scratchpad_pending_reqs_.release(rsp.tag);
         }
 
         CoreArbRspOut.pop();
     }
 
+    if (!ScratchpadRspOut.empty()) {
+        auto& rsp = ScratchpadRspOut.front();
+        auto& entry = scratchpad_pending_reqs_.at(rsp.tag);
+
+        entry.count -= rsp.mask.count();
+        std::cout << "LocalMemReader: Received ScratchpadRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
+        std::cout << "LocalMemReader: Updated SCRATCHPAD count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
+
+        if (entry.count == 0) {
+            if (entry.is_last_req) {
+                scratchpad_state_.is_last_req_count++;
+            }
+            if (entry.row == 0) { // save scratchpad addresses
+                if (entry.is_A) {
+                    scratchpad_state_.scratchpad_address_A_ = entry.addrs.at(0);
+                } else {
+                    scratchpad_state_.scratchpad_address_B_ = entry.addrs.at(0);
+                }
+            }
+
+            if (scratchpad_state_.is_last_req_count == 2) {
+                // can construct response to virgo controller!
+                virgo_rsp_t resp = {
+                    scratchpad_state_.scratchpad_address_A_,
+                    scratchpad_state_.scratchpad_address_B_
+                };
+
+                VirgoRspIn.push(resp);
+                scratchpad_state_.reset();
+            }
+        }
+    }
 }
+
+/*
+struct pending_req_t {
+    bool is_last_req; // last row in the req
+    std::vector<uint64_t> addrs;
+    uint32_t count;
+    uint32_t orig_count;
+};
+
+BitVector<> mask;
+std::vector<uint64_t> addrs;
+bool     write;
+uint32_t tag;
+uint32_t cid;
+uint64_t uuid; 
+LsuReq type */
 
 void LocalMemReader::reset() {
     // todo - this
@@ -459,6 +545,8 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     // bind to local_mem_reader
     LMemReqOut.bind(&local_mem_reader()->VirgoReqIn);
     local_mem_reader()->VirgoRspIn.bind(&LMemRspOut);
+
+    inflight_inst = false;
 }
 
 Virgo_MatMul::~Virgo_MatMul() {}
@@ -498,7 +586,7 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
             bool accum = (accum_addr >> 31) & 1;
             bool store = (accum_addr >> 30) & 1;
             accum_addr = accum_addr & 0x7FFF;
-            virgo_queue_t virgo_compute_entry = {
+            virgo_req_t virgo_compute_entry = {
                 .src_addr_A = write_registers.at(global_warp_id * 9 + 0),
                 .src_addr_B = write_registers.at(global_warp_id * 9 + 1),
                 .dst_addr = write_registers.at(global_warp_id * 9 + 2),
@@ -513,7 +601,7 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
             };
 
             tag_table.at(tag).reset();
-            virgo_compute_queue_.push(virgo_compute_entry); // add to queue, for timing
+            virgo_req_queue_.push(virgo_compute_entry); // add to queue, for timing
 
             perf_stats_.transfers++;
             MatMul(virgo_compute_entry); // matmul directly
@@ -521,7 +609,7 @@ void Virgo_MatMul::write(const void* data, uint64_t addr, uint32_t /* size */) {
     }   
 }
 
-void Virgo_MatMul::MatMul(const virgo_queue_t& virgo_compute_entry) {
+void Virgo_MatMul::MatMul(const virgo_req_t& virgo_compute_entry) {
     uint64_t src_addr_A = static_cast<uint64_t>(virgo_compute_entry.src_addr_A);
     uint64_t src_addr_B = static_cast<uint64_t>(virgo_compute_entry.src_addr_B);
     uint64_t dst_addr = static_cast<uint64_t>(virgo_compute_entry.dst_addr);
@@ -648,25 +736,21 @@ void Virgo_MatMul::tick() {
         ReqIn.pop();
     }
 
-    // typedef struct {
-    // uint32_t src_addr_A;
-    // uint32_t src_addr_B;
-    // uint32_t dst_addr;
-    // uint32_t data_type;
-    // uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
-    // uint32_t num_cols_A; 
-    // uint32_t num_cols_B;
-    // uint32_t accum_addr;
-    // uint32_t tag;
-    // bool store;
-    // bool accum;
-    // } virgo_queue_t;
-    if (!virgo_compute_queue_.empty()) {
-        auto virgo_compute_entry = virgo_compute_queue_.front();
+    if (!virgo_req_queue_.empty()) {
+        auto virgo_req_entry = virgo_req_queue_.front();
+        if (!inflight_inst) {
+            LMemReqOut.push(virgo_req_entry, 6);
+            inflight_inst = true;
+        }
+    }
+
+    if (!virgo_rsp_queue_.empty()) {
+        // received a response
+        auto virgo_rsp_entry = virgo_rsp_queue_.front();
+        virgo_req_queue_.pop(); // can pop the req that's associated with this rsp, can serve next req
+        inflight_inst = false;
+
         
-
-
-
     }
 }
 
