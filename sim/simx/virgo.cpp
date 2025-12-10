@@ -18,6 +18,10 @@ using namespace vortex;
 
 AccumulatorMem::AccumulatorMem(const SimContext& ctx, const char* name, uint64_t capacity)
     : SimObject(ctx, name)
+    , ReadReqIn(this)
+    , ReadRspOut(this)
+    , WriteReqIn(this)
+    , WriteRspOut(this)
     , ram_(capacity)
     , mmu_(0)
     , capacity_(capacity) {
@@ -34,7 +38,63 @@ void AccumulatorMem::write(const void* data, uint64_t addr, uint32_t size) {
     mmu_.write(data, addr, size, 0);
 }
 
-void AccumulatorMem::tick() {}
+void AccumulatorMem::tick() {
+    // Handle Read Requests
+    if (!ReadReqIn.empty()) {
+        auto& req = ReadReqIn.front();
+        // Assert address adjacency
+        uint64_t base_addr = req.addrs[0];
+        if (!req.mask.all()) {
+            std::cout << "Warning: AccumulatorMem ReadReq mask not all valid!" << std::endl;
+        }
+        for (size_t i = 1; i < req.addrs.size(); ++i) {
+            if (req.mask.test(i)) {
+                // Assuming 4-byte words, adjacent means +4
+                if (req.addrs[i] != base_addr + i * 4) {
+                    std::cout << "Warning: AccumulatorMem ReadReq addresses not adjacent!" << std::endl;
+                }
+            }
+        }
+        
+        // Send Response
+        LsuRsp rsp(req.mask.size());
+        rsp.tag = req.tag;
+        rsp.cid = req.cid;
+        rsp.uuid = req.uuid;
+        rsp.mask = req.mask;
+        ReadRspOut.push(rsp, 1);
+        ReadReqIn.pop();
+    }
+
+    // Handle Write Requests
+    if (!WriteReqIn.empty()) {
+        auto& req = WriteReqIn.front();
+        // Assert address adjacency
+        uint64_t base_addr = req.addrs[0];
+        if (!req.mask.all()) {
+            std::cout << "Error: AccumulatorMem WriteReq mask not all valid!" << std::endl;
+            std::abort();
+        }
+        for (size_t i = 1; i < req.addrs.size(); ++i) {
+            if (req.mask.test(i)) {
+                // Assuming 4-byte words, adjacent means +4
+                if (req.addrs[i] != base_addr + i * 4) {
+                    std::cout << "Error: AccumulatorMem WriteReq addresses not adjacent!" << std::endl;
+                    std::abort();
+                }
+            }
+        }
+        
+        // Send Response
+        LsuRsp rsp(req.mask.size());
+        rsp.tag = req.tag;
+        rsp.cid = req.cid;
+        rsp.uuid = req.uuid;
+        rsp.mask = req.mask;
+        WriteRspOut.push(rsp, 1);
+        WriteReqIn.pop();
+    }
+}
 void AccumulatorMem::reset() {
     for (uint64_t i = 0; i < ram_.size(); i += 4) {
         uint32_t zero = 0;
@@ -45,6 +105,14 @@ uint64_t AccumulatorMem::size() const { return capacity_; }
 
 ScratchPadMem::ScratchPadMem(const SimContext& ctx, const char* name, uint64_t capacity)
     : SimObject(ctx, name)
+    , ReadReqIn(this)
+    , ReadRspOut(this)
+    , WriteReqIn(this)
+    , WriteRspOut(this)
+    , BankWriteReqOut(SCRATCHPAD_BANKS, this)
+    , BankWriteRspIn(SCRATCHPAD_BANKS, this)
+    , BankReadReqOut(SCRATCHPAD_BANKS, this)
+    , BankReadRspIn(SCRATCHPAD_BANKS, this)
     , ram_(capacity)
     , mmu_(0)
     , capacity_(capacity) {
@@ -61,7 +129,148 @@ void ScratchPadMem::write(const void* data, uint64_t addr, uint32_t size) {
     mmu_.write(data, addr, size, 0);
 }
 
-void ScratchPadMem::tick() {}
+void ScratchPadMem::tick() {
+    
+    //handle writes
+    if (!WriteReqIn.empty()) {
+        auto& req = WriteReqIn.front();
+        // Assert address adjacency
+        uint64_t base_addr = req.addrs[0];
+        if (!req.mask.all()) {
+            std::cout << "Error: AccumulatorMem WriteReq mask not all valid!" << std::endl;
+            std::abort();
+        }
+        for (size_t i = 1; i < req.addrs.size(); ++i) {
+            if (req.mask.test(i)) {
+                if (req.addrs[i] != base_addr + i * 4) {
+                    std::cout << "Error: ScratchPadMem WriteReq addresses not adjacent!" << std::endl;
+                    std::abort();
+                }
+            }
+        }
+        
+        // Split to banks
+        for (size_t i = 0; i < req.mask.size(); ++i) {
+            if (req.mask.test(i)) {
+                uint64_t addr = req.addrs[i];
+                uint32_t bank_id = (addr / 4) % SCRATCHPAD_BANKS;
+                
+                MemReq mem_req;
+                mem_req.addr = addr;
+                mem_req.write = true;
+                mem_req.tag = req.tag;
+                mem_req.cid = req.cid;
+                mem_req.uuid = req.uuid;
+                
+                BankWriteReqOut.at(bank_id).push(mem_req, 1);
+            }
+        }
+        WriteReqIn.pop();
+    
+    }
+    
+    //handle reads
+    if (!ReadReqIn.empty()) {
+        auto& req = ReadReqIn.front();
+        // Assert address adjacency
+        uint64_t base_addr = req.addrs[0];
+        if (!req.mask.all()) {
+            std::cout << "Error: AccumulatorMem ReadReq mask not all valid!" << std::endl;
+            std::abort();
+        }
+        for (size_t i = 1; i < req.addrs.size(); ++i) {
+            if (req.mask.test(i)) {
+                if (req.addrs[i] != base_addr + i * 4) {
+                    std::cout << "Error: ScratchPadMem ReadReq addresses not adjacent!" << std::endl;
+                    std::abort();
+                }
+            }
+        }
+
+        for (size_t i = 0; i < req.mask.size(); ++i) {
+            if (req.mask.test(i)) {
+                uint64_t addr = req.addrs[i];
+                uint32_t bank_id = (addr / 4) % SCRATCHPAD_BANKS;
+                
+                MemReq mem_req;
+                mem_req.addr = addr;
+                mem_req.write = false;
+                mem_req.tag = req.tag;
+                mem_req.cid = req.cid;
+                mem_req.uuid = req.uuid;
+                
+                BankReadReqOut.at(bank_id).push(mem_req, 1);
+            }
+        }
+        ReadReqIn.pop();
+    }
+
+    //each bank handles one read and one write request at a time;
+    for (uint32_t i = 0; i < BankReadReqOut.size(); ++i) {
+        if (!BankReadReqOut.at(i).empty()) {
+            auto& req = BankReadReqOut.at(i).front();
+            MemRsp bank_rsp{req.tag, req.cid, req.uuid};
+            BankReadRspIn.at(i).push(bank_rsp, 1);
+            BankReadReqOut.at(i).pop();
+        }
+        if (!BankWriteReqOut.at(i).empty()) {
+            auto& req = BankWriteReqOut.at(i).front();
+            MemRsp bank_rsp{req.tag, req.cid, req.uuid};
+            BankWriteRspIn.at(i).push(bank_rsp, 1);
+            BankWriteReqOut.at(i).pop();
+        }
+
+    }
+
+    //handle Bank read response
+    for (uint32_t i = 0; i < BankReadRspIn.size(); ++i) {
+        if (!BankReadRspIn.at(i).empty()) {
+            auto& rsp = BankReadRspIn.at(i).front();
+            LsuRsp in_rsp(BankReadRspIn.size());
+            in_rsp.mask.set(i);
+            in_rsp.tag = rsp.tag;
+            in_rsp.cid = rsp.cid;
+            in_rsp.uuid = rsp.uuid;
+            for (uint32_t j = i + 1; j < BankReadRspIn.size(); ++j) {
+                if (BankReadRspIn.at(j).empty())
+                    continue;
+                auto& other_rsp = BankReadRspIn.at(j).front();
+                if (rsp.tag == other_rsp.tag) {
+                    in_rsp.mask.set(j);
+                    BankReadRspIn.at(j).pop();
+                }
+            }
+            BankReadRspIn.at(i).pop();
+            ReadRspOut.push(in_rsp, 1);
+            break;
+        }
+    }
+    
+    //handle Bank write response
+    for (uint32_t i = 0; i < BankWriteRspIn.size(); ++i) {
+        if (!BankWriteRspIn.at(i).empty()) {
+            auto& rsp = BankWriteRspIn.at(i).front();
+            LsuRsp in_rsp(BankWriteRspIn.size());
+            in_rsp.mask.set(i);
+            in_rsp.tag = rsp.tag;
+            in_rsp.cid = rsp.cid;
+            in_rsp.uuid = rsp.uuid;
+            for (uint32_t j = i + 1; j < BankWriteRspIn.size(); ++j) {
+                if (BankWriteRspIn.at(j).empty())
+                    continue;
+                auto& other_rsp = BankWriteRspIn.at(j).front();
+                if (rsp.tag == other_rsp.tag) {
+                    in_rsp.mask.set(j);
+                    BankWriteRspIn.at(j).pop();
+                }
+            }
+            BankWriteRspIn.at(i).pop();
+            WriteRspOut.push(in_rsp, 1);
+            break;
+        }
+    }
+}
+
 void ScratchPadMem::reset() {
     for (uint64_t i = 0; i < ram_.size(); i += 4) {
         uint32_t zero = 0;
@@ -91,6 +300,14 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     : SimObject(ctx, StrFormat("virgo_matmul%d", cluster->id()))
     , DmaReqOut(this)
     , DmaRspIn(this)
+    , AccumReadReqIn(this)
+    , AccumReadRspOut(this)
+    , AccumWriteReqIn(this)
+    , AccumWriteRspOut(this)
+    , ScratchReadReqIn(this)
+    , ScratchReadRspOut(this)
+    , ScratchWriteReqIn(this)
+    , ScratchWriteRspOut(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
@@ -101,7 +318,17 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , local_mem_reader_(ctx, StrFormat("local_mem_reader%d", cluster->id()).c_str())
     , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str())
 {
-    
+    // Bind Accumulator Ports
+    AccumReadReqIn.bind(&accum_mem_.ReadReqIn);
+    accum_mem_.ReadRspOut.bind(&AccumReadRspOut);
+    AccumWriteReqIn.bind(&accum_mem_.WriteReqIn);
+    accum_mem_.WriteRspOut.bind(&AccumWriteRspOut);
+
+    // Bind ScratchPad Ports
+    ScratchReadReqIn.bind(&scratchpad_mem_.ReadReqIn);
+    scratchpad_mem_.ReadRspOut.bind(&ScratchReadRspOut);
+    ScratchWriteReqIn.bind(&scratchpad_mem_.WriteReqIn);
+    scratchpad_mem_.WriteRspOut.bind(&ScratchWriteRspOut);
 }
 
 Virgo_MatMul::~Virgo_MatMul() {}

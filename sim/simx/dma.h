@@ -102,6 +102,9 @@ public:
     SimPort<MatMulDmaReq> MatMulReqIn;
     SimPort<MatMulDmaRsp> MatMulRspOut;
 
+    SimPort<LsuReq> AccumReqOut;
+    SimPort<LsuRsp> AccumRspIn;
+
     void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
 

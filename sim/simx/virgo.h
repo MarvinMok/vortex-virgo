@@ -28,10 +28,17 @@ typedef struct {
     bool accum;
 } virgo_queue_t;
 
+#define SCRATCHPAD_BANKS NUM_LSU_LANES
+
 class AccumulatorMem : public SimObject<AccumulatorMem> {
 public:
     AccumulatorMem(const SimContext& ctx, const char* name, uint64_t capacity);
     ~AccumulatorMem();
+
+    SimPort<LsuReq> ReadReqIn;
+    SimPort<LsuRsp> ReadRspOut;
+    SimPort<LsuReq> WriteReqIn;
+    SimPort<LsuRsp> WriteRspOut;
 
     void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
@@ -50,6 +57,11 @@ public:
     ScratchPadMem(const SimContext& ctx, const char* name, uint64_t capacity);
     ~ScratchPadMem();
 
+    SimPort<LsuReq> ReadReqIn;
+    SimPort<LsuRsp> ReadRspOut;
+    SimPort<LsuReq> WriteReqIn;
+    SimPort<LsuRsp> WriteRspOut;
+
     void read(void* data, uint64_t addr, uint32_t size);
     void write(const void* data, uint64_t addr, uint32_t size);
     void tick();
@@ -57,6 +69,10 @@ public:
     uint64_t size() const;
 
 private:
+    std::vector<SimPort<MemReq>> BankWriteReqOut;
+    std::vector<SimPort<MemRsp>> BankWriteRspIn;
+    std::vector<SimPort<MemReq>> BankReadReqOut;
+    std::vector<SimPort<MemRsp>> BankReadRspIn;
     RAM ram_;
     MemoryUnit mmu_;
     uint64_t capacity_;
@@ -104,6 +120,18 @@ void tick();
 
 SimPort<MatMulDmaReq> DmaReqOut;
 SimPort<MatMulDmaRsp> DmaRspIn;
+
+// Exposed ports for AccumulatorMem
+SimPort<LsuReq> AccumReadReqIn;
+SimPort<LsuRsp> AccumReadRspOut;
+SimPort<LsuReq> AccumWriteReqIn;
+SimPort<LsuRsp> AccumWriteRspOut;
+
+// Exposed ports for ScratchPadMem
+SimPort<LsuReq> ScratchReadReqIn;
+SimPort<LsuRsp> ScratchReadRspOut;
+SimPort<LsuReq> ScratchWriteReqIn;
+SimPort<LsuRsp> ScratchWriteRspOut;
 
 Cluster* cluster() const {
     return cluster_;

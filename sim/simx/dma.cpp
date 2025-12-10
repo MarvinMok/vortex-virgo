@@ -249,6 +249,8 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , WriteRspIn(this)
     , MatMulReqIn(this)
     , MatMulRspOut(this)
+    , AccumReqOut(this)
+    , AccumRspIn(this)
     , DmaLoadReqIn(this)
     , DmaLoadReqOut(this)
     , cluster_(cluster)
@@ -485,7 +487,6 @@ void Virgo_DMA::tick() {
             .tag = req.tag,
         };
         dma_load_queue_.push(dma_load);
-        dma_transfer(dma_load);
         MatMulReqIn.pop();
     }
     
@@ -501,7 +502,7 @@ void Virgo_DMA::tick() {
 
         auto target_port = is_global_dst ? &local_mem_adapter_->DmaReqIn.at(0) : &global_mem_adapter_->DmaReqIn.at(0);
         
-        DmaReq req(LSU_CHANNELS);
+        DmaReq req(LSU_CHANNEL
         req.lsuReq.tag = 0;
         static uint64_t uuid_counter = 0;
         req.lsuReq.uuid = ++uuid_counter;

@@ -149,9 +149,9 @@ void LsuMemAdapter::tick() {
       continue;
     auto& out_rsp = RspOut.at(i).front();
     //DT(4, this->name() << "-rsp" << i << ": " << out_rsp);
-    if (this->name() == "cluster0-lsu_lmem_adapter") {
-      std::cout << "LsuMemAdapter: " << this->name() << ", Processing Rsp from port " << i << " tag=" << out_rsp.tag << std::endl;
-    }
+    // if (this->name() == "cluster0-lsu_lmem_adapter") {
+    //   std::cout << "LsuMemAdapter: " << this->name() << ", Processing Rsp from port " << i << " tag=" << out_rsp.tag << std::endl;
+    // }
 
     // build memory response
     LsuRsp in_rsp(input_size);

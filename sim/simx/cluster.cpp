@@ -156,6 +156,10 @@ Cluster::Cluster(const SimContext& ctx,
   virgo_matmul_->DmaReqOut.bind(&dma_->MatMulReqIn);
   dma_->MatMulRspOut.bind(&virgo_matmul_->DmaRspIn);
 
+  // Connect DMA to Accumulator (in Virgo MatMul)
+  dma_->AccumReqOut.bind(&virgo_matmul_->AccumWriteReqIn);
+  virgo_matmul_->AccumWriteRspOut.bind(&dma_->AccumRspIn);
+
 }
 
 Cluster::~Cluster() {
