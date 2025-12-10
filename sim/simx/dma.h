@@ -115,7 +115,7 @@ public:
     const GlobalMemAdapter::Ptr& global_mem_adapter() const { return global_mem_adapter_; }
     const LocalMemAdapter::Ptr& local_mem_adapter() const { return local_mem_adapter_; }
 private:
-    typedef struct {
+    struct dma_load_t {
         uint32_t src_addr;
         uint32_t dst_addr;
         uint32_t data_type_size;
@@ -125,7 +125,10 @@ private:
         uint32_t dst_stride;
         bool is_accum;
         uint32_t tag;
-    } dma_load_t;
+    };
+
+    SimPort<dma_load_t> DmaLoadReqIn;
+    SimPort<dma_load_t> DmaLoadReqOut;
 
     void dma_transfer(const dma_load_t& dma_load);
     void data_transfer( uint64_t src_addr, 
@@ -140,6 +143,7 @@ private:
     std::vector<uint32_t> read_registers;
     std::queue<dma_load_t> dma_load_queue_;
     std::vector<std::bitset<32>> tag_table;
+    std::vector<uint32_t> timing_mmio_queue;
     MemoryUnit mmu_;
     PerfStats perf_stats_;
 

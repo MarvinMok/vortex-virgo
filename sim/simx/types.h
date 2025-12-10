@@ -1286,18 +1286,18 @@ public:
           continue;
         requests.set(r, !Inputs.at(i).empty());
       }
-      if (this->name() == "cluster0-core_arb-req_arb") {
-        std::cout << "TxArbiter: " << this->name() << ", requests: " << std::endl;
-      }
+      // if (this->name() == "cluster0-core_arb-req_arb") {
+      //   std::cout << "TxArbiter: " << this->name() << ", requests: " << std::endl;
+      // }
       if (requests.any()) {
         uint32_t g = arbiters_.at(o).grant(requests);
         uint32_t i = o * R + g;
         auto& req_in = Inputs.at(i);
         auto& req = req_in.front();
         DT(4, this->name() << "-req" << i << "_" << o << ": " << req);
-        if (this->name() == "cluster0-core_arb") {
-             std::cout << "TxArbiter: " << this->name() << ", Granting req from input " << i << " to output " << o << std::endl;
-        }
+        // if (this->name() == "cluster0-core_arb") {
+        //      std::cout << "TxArbiter: " << this->name() << ", Granting req from input " << i << " to output " << o << std::endl;
+        // }
         Outputs.at(o).push(RspType(req, i), delay_);
         req_in.pop();
       }
@@ -1504,9 +1504,9 @@ public:
         }
         uint32_t i = o * R + r;
         DT(4, this->name() << "-rsp" << o << "_" << i << ": " << in_rsp);
-        if (this->name() == "cluster0-core_arb") {
-          std::cout << "TxRxAdapter: " << this->name() << ", Pushing Rsp to port " << i << " tag=" << in_rsp.tag << std::endl;
-        }
+        // if (this->name() == "cluster0-core_arb") {
+        //   std::cout << "TxRxAdapter: " << this->name() << ", Pushing Rsp to port " << i << " tag=" << in_rsp.tag << std::endl;
+        // }
         RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }
@@ -1616,9 +1616,9 @@ public:
           in_rsp.tag = rsp.tag >> lg2_inputs_;
         }
         DT(4, this->name() << "-rsp" << g << "_" << i << ": " << in_rsp);
-        if (this->name() == "cluster0-lmem-xbar") {
-             std::cout << "TxRxCrossBar: " << this->name() << ", Forwarding rsp from output " << g << " to input " << i << " tag=" << in_rsp.tag << std::endl;
-        }
+        // if (this->name() == "cluster0-lmem-xbar") {
+        //      std::cout << "TxRxCrossBar: " << this->name() << ", Forwarding rsp from output " << g << " to input " << i << " tag=" << in_rsp.tag << std::endl;
+        // }
         RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }

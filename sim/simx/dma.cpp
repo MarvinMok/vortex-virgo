@@ -249,11 +249,14 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     , WriteRspIn(this)
     , MatMulReqIn(this)
     , MatMulRspOut(this)
+    , DmaLoadReqIn(this)
+    , DmaLoadReqOut(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*8, 0)  
     , read_registers(arch.num_cores()*arch.num_warps(), 0) 
     , tag_table(4)
+    , timing_mmio_queue(arch.num_cores()*arch.num_warps(), 0)
     , perf_stats_() 
 {
     global_mem_adapter_ = GlobalMemAdapter::Create("global_mem_adapter", 2);
@@ -271,6 +274,8 @@ Virgo_DMA::Virgo_DMA(const SimContext& ctx,
     // Local -> Global
     local_mem_adapter_->DmaReqOut.bind(&global_mem_adapter_->DmaReqIn.at(1));
     global_mem_adapter_->DmaRspOut.at(1).bind(&local_mem_adapter_->DmaRspIn);
+
+    DmaLoadReqOut.bind(&DmaLoadReqIn);
 }
 
 Virgo_DMA::~Virgo_DMA() {}
@@ -304,6 +309,7 @@ void Virgo_DMA::write(const void* data, uint64_t addr, uint32_t /*size*/) {
     if (index == 7) {
         read_registers.at(global_warp_id)++;
         tag_table.at(*d).set(global_warp_id);
+        timing_mmio_queue.at(global_warp_id)++;
         if (tag_table.at(*d).count() == arch_.num_warps() * arch_.num_cores()) {
             std::cout << "Begin DMA transfer" << std::endl;
             dma_load_t dma_load = {
@@ -393,6 +399,9 @@ void Virgo_DMA::reset() {
     for (uint32_t i = 0; i < tag_table.size(); i++) {
         tag_table.at(i).reset();
     }
+    for (uint32_t i = 0; i < timing_mmio_queue.size(); i++) {
+        timing_mmio_queue.at(i) = 0;
+    }
     dma_state_.reset();
     
     global_mem_adapter_->reset();
@@ -417,6 +426,41 @@ void Virgo_DMA::tick() {
     if (!WriteReqIn.empty()) {
         auto& req = WriteReqIn.front();
         //std::cout << "DMA Tick: Write Req tag=" << req.tag << " mask=" << req.mask << std::endl;
+        
+        for (uint32_t i = 0; i < req.mask.size(); ++i) {
+            if (req.mask.test(i)) {
+                uint64_t addr = req.addrs.at(i);
+                std::cout << "DMA Tick: Write Req addr=" << std::hex << addr << std::endl;
+                uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_WRITE_ADDR)) & 0xFFFF ) >> 2;
+                uint32_t index = super_index % 8;
+
+                if (index == 7) {
+
+                    //check if all are non-zero
+                    bool valid = true;
+                    for (uint32_t i = 0; i < timing_mmio_queue.size(); i++) {
+                        if (timing_mmio_queue.at(i) == 0) {
+                            valid = false;
+                        }
+                    }
+
+                    if (valid) {
+                        for (uint32_t i = 0; i < timing_mmio_queue.size(); i++) {
+                            timing_mmio_queue.at(i)--;
+                        }
+                        if (!dma_load_queue_.empty()) {
+                            auto dma_load = dma_load_queue_.front();
+                            dma_load_queue_.pop();
+                            DmaLoadReqOut.push(dma_load, 1);
+                        } else {
+                            std::cout << "Error: No DMA load requests in queue" << std::endl;
+                            std::abort();
+                        }
+                    }
+                }
+            }
+        }
+
         LsuRsp rsp(LSU_CHANNELS);
         rsp.tag = req.tag;
         rsp.cid = req.cid;
@@ -447,8 +491,8 @@ void Virgo_DMA::tick() {
     
     // Helper lambda to process queue
     // Process Queue
-    if (!dma_load_queue_.empty()) {
-        auto& dma_load = dma_load_queue_.front();
+    if (!DmaLoadReqIn.empty()) {
+        auto& dma_load = DmaLoadReqIn.front();
         //std::cout << "Virgo_DMA: Processing dma_load_queue item. src=" << dma_load.src_addr << " dst=" << dma_load.dst_addr << std::endl;
         
         // Determine target adapter based on destination address type
@@ -497,7 +541,7 @@ void Virgo_DMA::tick() {
                 std::cout << "Virgo_DMA: req.addrs.at(" << i << ")=" << req.lsuReq.addrs.at(i) << std::endl;
                 std::cout << "Virgo_DMA: req.dst_addrs.at(" << i << ")=" << req.dst_addrs.at(i) << std::endl;
             }
-            target_port->push(req, 6); //6 cycle delay to represent the actual transfer time from execute stage
+            target_port->push(req, 1); 
         }
     }
 
@@ -506,9 +550,9 @@ void Virgo_DMA::tick() {
         auto& rsp = global_mem_adapter_->DmaRspOut.at(0).front();
         std::cout << "Virgo_DMA: Rsp from GlobalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
-            if (!dma_load_queue_.empty()) {
-                auto dma_load = dma_load_queue_.front();
-                dma_load_queue_.pop();
+            if (!DmaLoadReqIn.empty()) {
+                auto dma_load = DmaLoadReqIn.front();
+                DmaLoadReqIn.pop();
                 dma_state_.reset();
                 
                 if (dma_load.is_accum) {
@@ -533,9 +577,9 @@ void Virgo_DMA::tick() {
         auto& rsp = local_mem_adapter_->DmaRspOut.at(0).front();
         std::cout << "Virgo_DMA: Rsp from LocalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
-            if (!dma_load_queue_.empty()) {
-                auto dma_load = dma_load_queue_.front();
-                dma_load_queue_.pop();
+            if (!DmaLoadReqIn.empty()) {
+                auto dma_load = DmaLoadReqIn.front();
+                DmaLoadReqIn.pop();
                 dma_state_.reset();
                 
                 if (dma_load.is_accum) {
