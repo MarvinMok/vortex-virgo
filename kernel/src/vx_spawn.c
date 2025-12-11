@@ -154,7 +154,7 @@ static void __attribute__ ((noinline)) process_thread_groups() {
       vx_cluster_id(), vx_core_id(), vx_warp_id(), thread_id, group_id, local_task_id,
       blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z);
     callback((void*)arg);
-    vx_printf("process_thread_groups: cluster=%d core=%d warp=%d thread=%d group=%d task_id=%d blockIdx=(%d,%d,%d) threadIdx=(%d,%d,%d)\n", 
+    vx_printf("done process_thread_groups: cluster=%d core=%d warp=%d thread=%d group=%d task_id=%d blockIdx=(%d,%d,%d) threadIdx=(%d,%d,%d)\n", 
       vx_cluster_id(), vx_core_id(), vx_warp_id(), thread_id, group_id, local_task_id,
       blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z);
     vx_barrier(1 << 31, vx_num_cores());

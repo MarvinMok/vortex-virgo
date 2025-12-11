@@ -221,9 +221,9 @@ void LsuMemAdapter::tick() {
         // send memory request
         ReqOut.at(i).push(out_req, delay_);
         //DT(4, this->name() << "-req" << i << ": " << out_req);
-        if (this->name() == "cluster0-lsu_lmem_adapter") {
-         std::cout << "LsuMemAdapter: " << this->name() << ", Pushing MemReq to port " << i << " tag=" << out_req.tag << " addr=" << std::hex << out_req.addr << std::dec << std::endl;
-        }
+        // if (this->name() == "cluster0-lsu_lmem_adapter") {
+        //  std::cout << "LsuMemAdapter: " << this->name() << ", Pushing MemReq to port " << i << " tag=" << out_req.tag << " addr=" << std::hex << out_req.addr << std::dec << std::endl;
+        // }
         
       }
     }

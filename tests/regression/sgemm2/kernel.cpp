@@ -4,6 +4,7 @@
 #include "common.h"
 
 void kernel_body(kernel_arg_t *arg) {
+  vx_barrier(1<<31, vx_num_cores());
 	// Setup buffer arguments
   auto A_ptr = reinterpret_cast<TYPE*>(arg->A_addr);
   auto B_ptr = reinterpret_cast<TYPE*>(arg->B_addr);

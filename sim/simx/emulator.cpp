@@ -175,8 +175,12 @@ instr_trace_t* Emulator::step() {
     }
   }
 
-  if (scheduled_warp == -1)
+  if (scheduled_warp == -1) {
+    std::cout << "no warp found" << std::endl;
     return nullptr;
+  }
+  std::cout << "warp found" << std::endl;
+    
 
   // get scheduled warp
   auto& warp = warps_.at(scheduled_warp);

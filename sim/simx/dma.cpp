@@ -44,7 +44,7 @@ void GlobalMemAdapter::tick() {
         
         // Allocate tag for tracking
         if (!pending_reqs.full()) {
-            std::cout << "GlobalMemAdapter: Req from Arbiter tag=" << req.tag << " write=" << req.lsuReq.write << " count=" << req.lsuReq.mask.count() << std::endl;
+            //std::cout << "GlobalMemAdapter: Req from Arbiter tag=" << req.tag << " write=" << req.lsuReq.write << " count=" << req.lsuReq.mask.count() << std::endl;
             uint32_t count = req.lsuReq.mask.count();
             uint32_t tag = pending_reqs.allocate({
                 req.last_req, 
@@ -76,7 +76,7 @@ void GlobalMemAdapter::tick() {
         entry.count -= rsp.mask.count();
         
         if (entry.count == 0) {
-            std::cout << "GlobalMemAdapter: Full response for tag=" << rsp.tag << " orig_tag=" << entry.tag << " write=" << entry.write << std::endl;
+            //std::cout << "GlobalMemAdapter: Full response for tag=" << rsp.tag << " orig_tag=" << entry.tag << " write=" << entry.write << std::endl;
             // Full response received
             if (!entry.write) { // Was a READ, now send WRITE to LocalMemAdapter
                 DmaReq req(LSU_CHANNELS);
@@ -89,10 +89,10 @@ void GlobalMemAdapter::tick() {
                 for (uint32_t i = 0; i < entry.orig_count; ++i) {
                     req.lsuReq.mask.set(i);
                 }
-                std::cout << "GlobalMemAdapter: Pushing req.addrs.count=" << req.lsuReq.mask.count() << std::endl;
-                for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
-                    std::cout << "GlobalMemAdapter: Pushing req.addrs.at(" << i << ")=" << std::hex << req.lsuReq.addrs.at(i) << std::endl;
-                }
+                //std::cout << "GlobalMemAdapter: Pushing req.addrs.count=" << req.lsuReq.mask.count() << std::endl;
+                // for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
+                //     std::cout << "GlobalMemAdapter: Pushing req.addrs.at(" << i << ")=" << std::hex << req.lsuReq.addrs.at(i) << std::endl;
+                // }
                 DmaReqOut.push(req, 1);
             } else { // Was a WRITE, send response to Arbiter
                 DmaRsp dma_rsp(LSU_CHANNELS);
@@ -112,7 +112,7 @@ void GlobalMemAdapter::tick() {
     // 3. Handle Incoming Responses from other Adapter (Write Completion)
     if (!DmaRspIn.empty()) {
         auto& rsp = DmaRspIn.front();
-        std::cout << "GlobalMemAdapter: Rsp from other adapter tag=" << rsp.tag << std::endl;
+        //std::cout << "GlobalMemAdapter: Rsp from other adapter tag=" << rsp.tag << std::endl;
         arbiter_->RspOut.at(0).push(rsp, 1);
         DmaRspIn.pop();
     }
@@ -134,9 +134,9 @@ LocalMemAdapter::LocalMemAdapter(const SimContext& ctx, const char* name, uint32
     snprintf(sname, 100, "%s-arbiter", name);
     arbiter_ = DmaArbiter::Create(sname, ArbiterType::RoundRobin, num_inputs, 1);
     
-    std::cout << "LocalMemAdapter: num_inputs=" << num_inputs 
-              << ", DmaReqIn.size()=" << DmaReqIn.size() 
-              << ", arbiter_->ReqIn.size()=" << arbiter_->ReqIn.size() << std::endl;
+    // std::cout << "LocalMemAdapter: num_inputs=" << num_inputs 
+    //           << ", DmaReqIn.size()=" << DmaReqIn.size() 
+    //           << ", arbiter_->ReqIn.size()=" << arbiter_->ReqIn.size() << std::endl;
     
     for (uint32_t i = 0; i < num_inputs; ++i) {
         DmaReqIn.at(i).bind(&arbiter_->ReqIn.at(i));
@@ -159,7 +159,7 @@ void LocalMemAdapter::tick() {
         auto& req = arbiter_->ReqOut.at(0).front();
         
         if (!pending_reqs.full()) {
-            std::cout << "LocalMemAdapter: Req from Arbiter tag=" << req.tag << " write=" << req.lsuReq.write << std::endl;
+            //std::cout << "LocalMemAdapter: Req from Arbiter tag=" << req.tag << " write=" << req.lsuReq.write << std::endl;
             uint32_t count = req.lsuReq.mask.count();
             uint32_t tag = pending_reqs.allocate({
                 req.last_req, 
@@ -176,14 +176,14 @@ void LocalMemAdapter::tick() {
             lsu_req.tag = tag;
             for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
                 if (lsu_req.mask.test(i)) {
-                    std::cout << "addr " << std::hex << lsu_req.addrs.at(i) << ", i=" << std::dec << i << std::endl;
+                    //std::cout << "addr " << std::hex << lsu_req.addrs.at(i) << ", i=" << std::dec << i << std::endl;
                     if (get_addr_type(lsu_req.addrs.at(i)) != AddrType::Shared) {
                         std::cout << "Error: LocalMemAdapter address " << std::hex << lsu_req.addrs.at(i) << " is not Shared type! Type=" << get_addr_type(lsu_req.addrs.at(i)) << std::endl;
                         std::abort();
                     }
                 }
             }
-            std::cout << "LocalMemAdapter: Pushing LsuReq tag=" << tag << " addr=" << std::hex << lsu_req.addrs[0] << std::dec << " write=" << lsu_req.write << std::endl;
+            //std::cout << "LocalMemAdapter: Pushing LsuReq tag=" << tag << " addr=" << std::hex << lsu_req.addrs[0] << std::dec << " write=" << lsu_req.write << std::endl;
             LsuReqOut.push(lsu_req, 1);
             
             arbiter_->ReqOut.at(0).pop();
@@ -193,14 +193,14 @@ void LocalMemAdapter::tick() {
     // 2. Handle Outgoing Responses (from CoreArbiter)
     if (!LsuRspIn.empty()) {
         auto& rsp = LsuRspIn.front();
-        std::cout << "LocalMemAdapter: Received LsuRsp tag=" << rsp.tag << std::endl;
+        //std::cout << "LocalMemAdapter: Received LsuRsp tag=" << rsp.tag << std::endl;
         
         auto& entry = pending_reqs.at(rsp.tag);
         
         entry.count -= rsp.mask.count();
         
         if (entry.count == 0) {
-            std::cout << "LocalMemAdapter: Full response for tag=" << rsp.tag << " orig_tag=" << entry.tag << " write=" << entry.write << std::endl;
+            //std::cout << "LocalMemAdapter: Full response for tag=" << rsp.tag << " orig_tag=" << entry.tag << " write=" << entry.write << std::endl;
             if (!entry.write) { // Was a READ, now send WRITE to GlobalMemAdapter
                 DmaReq req(LSU_CHANNELS);
                 req.tag = entry.tag; // Preserve arbiter tag
@@ -231,7 +231,7 @@ void LocalMemAdapter::tick() {
     // 3. Handle Incoming Responses from other Adapter
     if (!DmaRspIn.empty()) {
         auto& rsp = DmaRspIn.front();
-        std::cout << "LocalMemAdapter: Rsp from other adapter tag=" << rsp.tag << std::endl;
+        //std::cout << "LocalMemAdapter: Rsp from other adapter tag=" << rsp.tag << std::endl;
         arbiter_->RspOut.at(0).push(rsp, 1);
         DmaRspIn.pop();
     }
@@ -555,7 +555,7 @@ void Virgo_DMA::tick() {
         for (uint32_t i = 0; i < req.mask.size(); ++i) {
             if (req.mask.test(i)) {
                 uint64_t addr = req.addrs.at(i);
-                std::cout << "DMA Tick: Write Req addr=" << std::hex << addr << std::endl;
+                //std::cout << "DMA Tick: Write Req addr=" << std::hex << addr << std::endl;
                 uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_WRITE_ADDR)) & 0xFFFF ) >> 2;
                 uint32_t index = super_index % 8;
 
@@ -659,12 +659,12 @@ void Virgo_DMA::tick() {
         }
         
         if (count > 0) {
-            std::cout << "Virgo_DMA: Target adapter is " << (dma_load.is_accum ? "AccumMemAdapter" : (is_global_dst ? "LocalMemAdapter" : "GlobalMemAdapter")) << std::endl;
-            std::cout << "Virgo_DMA: Pushing req to adapter. last_req=" << req.last_req << " is_global_dst=" << is_global_dst << " count=" << count << std::endl;
-            for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
-                std::cout << "Virgo_DMA: req.addrs.at(" << i << ")=" << req.lsuReq.addrs.at(i) << std::endl;
-                std::cout << "Virgo_DMA: req.dst_addrs.at(" << i << ")=" << req.dst_addrs.at(i) << std::endl;
-            }
+            //std::cout << "Virgo_DMA: Target adapter is " << (dma_load.is_accum ? "AccumMemAdapter" : (is_global_dst ? "LocalMemAdapter" : "GlobalMemAdapter")) << std::endl;
+            //std::cout << "Virgo_DMA: Pushing req to adapter. last_req=" << req.last_req << " is_global_dst=" << is_global_dst << " count=" << count << std::endl;
+            //for (uint32_t i = 0; i < LSU_CHANNELS; ++i) {
+            //    std::cout << "Virgo_DMA: req.addrs.at(" << i << ")=" << req.lsuReq.addrs.at(i) << std::endl;
+            //    std::cout << "Virgo_DMA: req.dst_addrs.at(" << i << ")=" << req.dst_addrs.at(i) << std::endl;
+            //}
             target_port->push(req, 1); 
         }
     }
@@ -672,7 +672,7 @@ void Virgo_DMA::tick() {
     // Handle Responses from GlobalMemAdapter
     if (!global_mem_adapter_->DmaRspOut.at(0).empty()) {
         auto& rsp = global_mem_adapter_->DmaRspOut.at(0).front();
-        std::cout << "Virgo_DMA: Rsp from GlobalMemAdapter last_req=" << rsp.last_req << std::endl;
+        //std::cout << "Virgo_DMA: Rsp from GlobalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
             if (!DmaLoadReqIn.empty()) {
                 auto dma_load = DmaLoadReqIn.front();
@@ -699,7 +699,7 @@ void Virgo_DMA::tick() {
     // Handle Responses from LocalMemAdapter
     if (!local_mem_adapter_->DmaRspOut.at(0).empty()) {
         auto& rsp = local_mem_adapter_->DmaRspOut.at(0).front();
-        std::cout << "Virgo_DMA: Rsp from LocalMemAdapter last_req=" << rsp.last_req << std::endl;
+        //std::cout << "Virgo_DMA: Rsp from LocalMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
             if (!DmaLoadReqIn.empty()) {
                 auto dma_load = DmaLoadReqIn.front();
@@ -726,7 +726,7 @@ void Virgo_DMA::tick() {
     // Handle Responses from AccumMemAdapter
     if (!accum_mem_adapter_->DmaRspOut.at(0).empty()) {
         auto& rsp = accum_mem_adapter_->DmaRspOut.at(0).front();
-        std::cout << "Virgo_DMA: Rsp from AccumMemAdapter last_req=" << rsp.last_req << std::endl;
+        //std::cout << "Virgo_DMA: Rsp from AccumMemAdapter last_req=" << rsp.last_req << std::endl;
         if (rsp.last_req) {
             if (!DmaLoadReqIn.empty()) {
                 auto dma_load = DmaLoadReqIn.front();

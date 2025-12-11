@@ -229,7 +229,7 @@ void Cluster::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
   uint32_t cores_per_cluster = sockets_per_cluster * cores_per_socket;
   uint32_t local_core_id = core_id % cores_per_cluster;
   barrier.set(local_core_id);
-  std::cout << "global barrier suspending core " << core_id << " at barrier " << bar_id << std::endl;
+  std::cout << "global barrier suspending core " << local_core_id << " at barrier " << bar_id << std::endl;
   std::cout << "barrier count: " << barrier.count() << " count: " << count << std::endl;
   DP(3, "*** Suspend core #" << core_id << " at barrier #" << bar_id);
 
@@ -239,6 +239,7 @@ void Cluster::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
         for (uint32_t c = 0; c < cores_per_socket; ++c) {
           uint32_t i = s * cores_per_socket + c;
           if (barrier.test(i)) {
+            std::cout << "global barrier resuming core " << i << " at barrier " << bar_id << std::endl;
             DP(3, "*** Resume core #" << i << " at barrier #" << bar_id);
             sockets_.at(s)->resume(c);
           }

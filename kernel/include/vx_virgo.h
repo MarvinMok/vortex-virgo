@@ -90,10 +90,10 @@ static __attribute__((always_inline)) void dma_fence(uint32_t num_ops) {
 static __attribute__((always_inline)) void compute_fence(uint32_t num_ops) {
 
     //only one thread needs to read
-    vx_tmc_one();
+    //vx_tmc_one();
 
     if (num_ops == 0) {
-        vx_tmc(-1);
+        //vx_tmc(-1);
         return;
     }
     uint32_t local_core_id = vx_core_id(); 
@@ -118,7 +118,7 @@ static __attribute__((always_inline)) void compute_fence(uint32_t num_ops) {
     }
     vx_printf("here\n");
     //set all threads active
-    vx_tmc(-1);
+    //vx_tmc(-1);
 
 }
 

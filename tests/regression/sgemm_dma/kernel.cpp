@@ -27,7 +27,7 @@ void kernel_body(kernel_arg_t *arg) {
   auto l_col = threadIdx.y;
 
   TYPE sum(0);
-
+  vx_barrier(1<<31, vx_num_cores());
   // Loop over tiles
   for (uint32_t k = 0; k < size; k += tile_size) {
     // Load tile of matrix A & B to local memory
@@ -51,17 +51,17 @@ void kernel_body(kernel_arg_t *arg) {
     
     vortex::virgo::dma_fence(2);
     // Synchronize all warps in current group
-    vx_printf("warp %d: load tile %d sync\n", vx_warp_id(), k);
+    //vx_printf("warp %d: load tile %d sync\n", vx_warp_id(), k);
     vx_barrier(1<<31, vx_num_cores());
 
     // Compute partial sum for the local tile
     for (uint32_t j = 0; j < tile_size; ++j) {
       sum += local_A[l_row * tile_size + j] * local_B[j * tile_size + l_col];
     }
-    vx_printf("computed partial sum %f\n", sum);
+    //vx_printf("computed partial sum %f\n", sum);
 
     // Synchronize all warps in current group
-    vx_printf("warp %d: load tile %d sync2\n", vx_warp_id(), k);
+    //vx_printf("warp %d: load tile %d sync2\n", vx_warp_id(), k);
     vx_barrier(1<<31, vx_num_cores());
   }
   // Store the computed sum into the result matrix C

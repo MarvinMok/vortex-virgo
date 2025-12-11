@@ -19,16 +19,17 @@ void kernel_body(kernel_arg_t *arg) {
   auto local_C = (TYPE*)local_ptr + 4 * blockDim.x * blockDim.y;
   uint32_t accum_C = 0x0;
   auto size = arg->size;
-  auto tile_size = arg->tile_size;
+  const auto tile_size = arg->tile_size;
+  auto num_cores = vx_num_cores();
 
   // Determine global row and column indices
   auto g_row = blockIdx.x * blockDim.x;
   auto g_col = blockIdx.y * blockDim.y;
-
+  //vx_printf("kernel gg %d %d %d\n", g_row, g_col, tile_size);
   // Determine local row and column indices
   auto l_row = threadIdx.x;
-  auto l_col = threadIdx.y;;
-  auto C_ptr_local = &C_ptr[g_row * size + g_col];
+  auto l_col = threadIdx.y;
+  auto C_ptr_local = &C_ptr[g_row * size + blockIdx.y * blockDim.y];
   vx_barrier(1<<31, vx_num_cores());
   //load A and B
   vortex::virgo::dma_load<TYPE>(
@@ -41,81 +42,67 @@ void kernel_body(kernel_arg_t *arg) {
     );
 
     vortex::virgo::dma_load<TYPE>(
-      &B_ptr[g_col],
+      &B_ptr[blockIdx.y * blockDim.y],
       local_B_0,
       tile_size,
       tile_size,
       size,
       tile_size
     );
-  vx_printf("kernel gemm start %d\n", tile_size);
+  vx_barrier(1<<31, num_cores);
+  //vx_printf("kernel gemm start %d\n", tile_size);
 
-  
+  TYPE sum(0);
   // Loop over tiles
   for (uint32_t k = 0; k < size; k += tile_size) {
-    vx_printf("loop start fence %d\n", k);
+    //vx_printf("loop start fence %d\n", k);
     vortex::virgo::dma_fence(2);
-    vx_printf("num cores %d\n", vx_num_cores());
+    //vx_printf("num cores %d\n", vx_num_cores());
     vx_barrier(1<<31, vx_num_cores());
     //p is for producer (dma load), and c  is for consumer (matrix multiply!)
-    //hard coded since threadblock size is 4 by 4, so tile_size is 4
     auto local_A_p = (k / tile_size) % 2 ? local_A_0 : local_A_1;
     auto local_B_p = (k / tile_size) % 2 ? local_B_0 : local_B_1;
     auto local_A_c = (k / tile_size) % 2 ? local_A_1 : local_A_0;
     auto local_B_c = (k / tile_size) % 2 ? local_B_1 : local_B_0;
-    bool accum = (k != 0);
-    bool store = (k + tile_size >= size);
 
-    // pack accumulator address, accum, and store flags together
-    // store flags tells us whether to write back to memory or not
-    // accum flag tells us whether to add to value in accumulator memory, or to simply just store
-    // basically, store = 1 on last compute call for an output tile, and accum = 1 at the start of a new compuete call for an output tile
-    // idk why but for some reason doing this inside vx_virgo made it break... i think its a compiler error or smtg
-    uint32_t accum_packed = (accum_C & 0x7FFF) | (accum << 31) | (store << 30);
     //compute this tile
-    vortex::virgo::compute<float>(local_A_c, local_B_c, local_C, accum_packed, tile_size, tile_size, tile_size);
-    if (k + tile_size < size) {
-      vx_printf("dma load core %d warp %d\n", vx_core_id(), vx_warp_id());
+    if (k + 4 < size) {
+      //vx_printf("dma load core %d warp %d\n", vx_core_id(), vx_warp_id());
       // Load tile of matrix A & B to local memory
       vortex::virgo::dma_load<TYPE>(
-        &A_ptr[g_row * size + k + tile_size],
+        &A_ptr[g_row * size + k + 4],
         local_A_p,
-        tile_size,
-        tile_size, 
+        4,
+        4, 
         size,
-        tile_size
+        4
       );
 
       vortex::virgo::dma_load<TYPE>(
-        &B_ptr[(k + tile_size) * size + g_col],
+        &B_ptr[(k + 4) * size + g_col],
         local_B_p,
-        tile_size,
-        tile_size,
+        4,
+        4,
         size,
-        tile_size
+        4
       );
     }
-   
-    vx_printf("compute fence %d\n", k);
-    vortex::virgo::compute_fence(1);
-    vx_printf("here2\n");
-    
+    for (uint32_t j = 0; j < 4; ++j) {
+      TYPE a = local_A_c[threadIdx.x * 4 + j];
+      TYPE b = local_B_c[j * 4 + threadIdx.y];
+      sum += (a * b);
+      // vx_printf("computed partial sum %f %f %f, addr= %p %p, other= %d %d %p %p\n", sum, local_A_c[threadIdx.x * 4 + j], local_B_c[j * 4 + threadIdx.y]
+      //   , &local_A_c[threadIdx.x * 4 + j], &local_B_c[j * 4 + threadIdx.y],
+      //   threadIdx.x * 4 + j, j * 4 + threadIdx.y, &local_A_c[0], &local_B_c[0]);
+    }
   }
-
-  vx_printf("kernel store C\n");
-
-  // Store tile of matrix C from local memory
-  vortex::virgo::dma_load<TYPE>(
-    local_C,
-    C_ptr_local,
-    tile_size,
-    tile_size,
-    tile_size, 
-    size       
-  );
-  vortex::virgo::dma_fence(1);
-  vx_printf("kernel fin\n");
-
+  vx_barrier(1<<31, vx_num_cores());
+  //x_printf("kernel store C\n");
+  C_ptr[(g_row + threadIdx.x) * size + g_col + threadIdx.y] = sum;
+  // vx_printf("kernel fin %f, %p, %d, %d, %d, %d, %d, %d, %d\n", 
+  //   sum, &C_ptr[(g_row + threadIdx.x) * size + (blockIdx.y * blockDim.y) + threadIdx.y], 
+  //   (g_row + threadIdx.x) * size + (blockIdx.y * blockDim.y) + threadIdx.y,
+  //   g_row, (blockIdx.y * blockDim.y), threadIdx.x, threadIdx.y, tile_size, size);
 }
 
 int main() {
