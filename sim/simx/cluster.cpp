@@ -136,7 +136,7 @@ Cluster::Cluster(const SimContext& ctx,
       core->mmio_write_arb()->ReqOut.at(0).bind(&mmio_write_arb->ReqIn.at(i));
       mmio_write_arb->RspIn.at(i).bind(&core->mmio_write_arb()->RspOut.at(0));
 
-      // connect core-levle Virgo MMIO arbiter to cluster-level arbiter
+      // connect core-level Virgo MMIO arbiter to cluster-level arbiter
       core->virgo_mmio_arb()->ReqOut.at(0).bind(&virgo_mmio_arb->ReqIn.at(i));
       virgo_mmio_arb->RspIn.at(i).bind(&core->virgo_mmio_arb()->RspOut.at(0));
   }

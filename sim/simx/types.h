@@ -753,6 +753,25 @@ struct mem_addr_size_t {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+typedef struct {
+    uint32_t src_addr_A;
+    uint32_t src_addr_B;
+    uint32_t dst_addr;
+    uint32_t data_type;
+    uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
+    uint32_t num_cols_A; 
+    uint32_t num_cols_B;
+    uint32_t accum_addr;
+    uint32_t tag;
+    bool store;
+    bool accum;
+} virgo_req_t;
+
+typedef struct {
+    uint64_t scratchpad_src_addr_A;
+    uint64_t scratchpad_src_addr_B;
+} virgo_rsp_t;
+
 struct MatMulDmaReq {
     uint32_t src_addr;
     uint32_t dst_addr;

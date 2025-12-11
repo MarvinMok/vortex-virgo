@@ -5,7 +5,7 @@
 
 void kernel_body(kernel_arg_t *arg) {
 	// Setup buffer arguments
-  vx_printf("kernel start\n");
+  // vx_printf("kernel start\n");
   auto A_ptr = reinterpret_cast<TYPE*>(arg->A_addr);
   auto B_ptr = reinterpret_cast<TYPE*>(arg->B_addr);
   auto C_ptr = reinterpret_cast<TYPE*>(arg->C_addr);
@@ -48,14 +48,14 @@ void kernel_body(kernel_arg_t *arg) {
       size,
       tile_size
     );
-  vx_printf("kernel gemm start %d\n", tile_size);
+  // vx_printf("kernel gemm start %d\n", tile_size);
 
   
   // Loop over tiles
   for (uint32_t k = 0; k < size; k += tile_size) {
-    vx_printf("loop start fence %d\n", k);
+    // vx_printf("loop start fence %d\n", k);
     vortex::virgo::dma_fence(2);
-    vx_printf("num cores %d\n", vx_num_cores());
+    // vx_printf("num cores %d\n", vx_num_cores());
     vx_barrier(1<<31, vx_num_cores());
     //p is for producer (dma load), and c  is for consumer (matrix multiply!)
     //hard coded since threadblock size is 4 by 4, so tile_size is 4
@@ -75,7 +75,7 @@ void kernel_body(kernel_arg_t *arg) {
     //compute this tile
     vortex::virgo::compute<float>(local_A_c, local_B_c, local_C, accum_packed, tile_size, tile_size, tile_size);
     if (k + tile_size < size) {
-      vx_printf("dma load core %d warp %d\n", vx_core_id(), vx_warp_id());
+      // vx_printf("dma load core %d warp %d\n", vx_core_id(), vx_warp_id());
       // Load tile of matrix A & B to local memory
       vortex::virgo::dma_load<TYPE>(
         &A_ptr[g_row * size + k + tile_size],
@@ -96,13 +96,13 @@ void kernel_body(kernel_arg_t *arg) {
       );
     }
    
-    vx_printf("compute fence %d\n", k);
+    // vx_printf("compute fence %d\n", k);
     vortex::virgo::compute_fence(1);
-    vx_printf("here2\n");
+    // vx_printf("here2\n");
     
   }
 
-  vx_printf("kernel store C\n");
+  // vx_printf("kernel store C\n");
 
   // Store tile of matrix C from local memory
   vortex::virgo::dma_load<TYPE>(
@@ -114,7 +114,7 @@ void kernel_body(kernel_arg_t *arg) {
     size       
   );
   vortex::virgo::dma_fence(1);
-  vx_printf("kernel fin\n");
+  // vx_printf("kernel fin\n");
 
 }
 

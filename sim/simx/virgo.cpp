@@ -171,6 +171,7 @@ void ScratchPadMem::tick() {
     
     //handle reads
     if (!ReadReqIn.empty()) {
+        std::cout << "Scratch Read Req In" << std::endl;
         auto& req = ReadReqIn.front();
         // Assert address adjacency
         uint64_t base_addr = req.addrs[0];
@@ -199,7 +200,9 @@ void ScratchPadMem::tick() {
                 mem_req.cid = req.cid;
                 mem_req.uuid = req.uuid;
                 
+                std::cout << "Pushing Bank ReqReq" << std::endl;
                 BankReadReqOut.at(bank_id).push(mem_req, 1);
+                std::cout << "Pushed Bank ReqReq" << std::endl;
             }
         }
         ReadReqIn.pop();
@@ -292,25 +295,9 @@ LocalMemReader::LocalMemReader(const SimContext& ctx, const char* name)
     , lmem_pending_reqs_(16) // 16 for Safety!
     , scratchpad_pending_reqs_(16) // 16 for Safety!
 {
-
 }
 
 LocalMemReader::~LocalMemReader() {}
-
-/* typedef struct {
-uint32_t src_addr_A;
-uint32_t src_addr_B;
-uint32_t dst_addr;
-uint32_t data_type;
-uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
-uint32_t num_cols_A; 
-uint32_t num_cols_B;
-uint32_t accum_addr;
-uint32_t tag;
-bool store;
-bool accum;
-} virgo_queue_t; 
-*/
 
 void LocalMemReader::tick() {
     if (!VirgoReqIn.empty()) {
@@ -354,7 +341,7 @@ void LocalMemReader::tick() {
             req.tag = tag;
             
             // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
-            std::cout << "LocalMemReader: Sending LsuReq for Matrix A row=" << lmem_state_A_.row << ", tag=" << req.tag << std::endl;
+            //std::cout << "LocalMemReader: Sending LsuReq for Matrix A row=" << lmem_state_A_.row << ", tag=" << req.tag << std::endl;
             CoreArbReqOut.push(req); // default delay of 1 cycle
             lmem_state_A_.row++;
         }
@@ -387,17 +374,16 @@ void LocalMemReader::tick() {
             req.tag = tag;
             
             // finally, actually send LsuReq to CoreArbiter. One LsuReq per row!
-            std::cout << "LocalMemReader: Sending LsuReq for Matrix B row=" << lmem_state_B_.row << ", tag=" << req.tag << std::endl;
+            //std::cout << "LocalMemReader: Sending LsuReq for Matrix B row=" << lmem_state_B_.row << ", tag=" << req.tag << std::endl;
             CoreArbReqOut.push(req); // default delay of 1 cycle
             lmem_state_B_.row++;
         }
-
-        if (lmem_state_A_.done && lmem_state_B_.done) {
-            VirgoReqIn.pop(); // finally remove from queue
-            lmem_state_A_.reset();
-            lmem_state_B_.reset();
-            lmem_workload_ = !lmem_workload_; // flip workload bit
-        }
+    }
+    if (lmem_state_A_.done && lmem_state_B_.done) {
+        VirgoReqIn.pop(); // finally remove from queue
+        lmem_state_A_.reset();
+        lmem_state_B_.reset();
+        lmem_workload_ = !lmem_workload_; // flip workload bit
     }
 
     // important: scratchpad operations happen IN ORDER.
@@ -405,9 +391,9 @@ void LocalMemReader::tick() {
         auto& rsp = CoreArbRspOut.front();
         auto& entry = lmem_pending_reqs_.at(rsp.tag);
 
-        std::cout << "LocalMemReader: Received CoreArbRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
+        //std::cout << "LocalMemReader: Received CoreArbRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
         entry.count -= rsp.mask.count(); // response mask contains how many of the addresses have been serviced
-        std::cout << "LocalMemReader: Updated COREARB count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
+        //std::cout << "LocalMemReader: Updated COREARB count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
 
         if (entry.count == 0) {
             // write to scratchpad
@@ -417,7 +403,6 @@ void LocalMemReader::tick() {
                 req.mask.set(i);
             }
 
-            std::vector<uint64_t> addrs;
             for (uint32_t col_num = 0; col_num < entry.addrs.size(); ++col_num) {
                 uint64_t index = entry.row * entry.addrs.size() + col_num;
                 uint64_t data_type_size = entry.addrs.at(1) - entry.addrs.at(0);
@@ -429,24 +414,26 @@ void LocalMemReader::tick() {
                     base_address = (entry.is_A) ? SCRATCHPAD_TILE_A_2 : SCRATCHPAD_TILE_B_2;
                 }
                 uint64_t addr = base_address + index * data_type_size;
-                addrs.at(col_num) = addr; // add to addrs vector
+                req.addrs.at(col_num) = addr; // add to addrs vector
             }
 
             uint32_t tag = scratchpad_pending_reqs_.allocate({
                 entry.is_last_req,
                 entry.is_A,
                 entry.workload, // unused???
-                addrs, // create new addrs
+                req.addrs, // create new addrs
                 entry.row,
-                entry.addrs.size(),
-                entry.addrs.size()
+                static_cast<uint32_t>(entry.addrs.size()),
+                static_cast<uint32_t>(entry.addrs.size())
             });
             req.tag = tag;
 
             // finally, send LsuReq to Scratchpad
-            std::cout << "LocalMemReader: Sending LsuReq to Scratchpad for Matrix " << entry.is_A << ", row=" << entry.row << ", tag=" << req.tag << std::endl;
+            //std::cout << "LocalMemReader: Sending LsuReq to Scratchpad for Matrix " << entry.is_A << ", row=" << entry.row << ", tag=" << req.tag << std::endl;
             ScratchpadReqOut.push(req); // default delay of 1 cycle
-            scratchpad_pending_reqs_.release(rsp.tag);
+
+            // done with the lmem operations, moving onto scratchpad, so can release the req in lmem_pending_reqs_
+            lmem_pending_reqs_.release(rsp.tag); 
         }
 
         CoreArbRspOut.pop();
@@ -457,8 +444,8 @@ void LocalMemReader::tick() {
         auto& entry = scratchpad_pending_reqs_.at(rsp.tag);
 
         entry.count -= rsp.mask.count();
-        std::cout << "LocalMemReader: Received ScratchpadRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
-        std::cout << "LocalMemReader: Updated SCRATCHPAD count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
+        //std::cout << "LocalMemReader: Received ScratchpadRspOut for tag=" << rsp.tag << ", mask.count=" << rsp.mask << std::endl;
+        //std::cout << "LocalMemReader: Updated Scratchpad count for tag=" << rsp.tag << ", entry.count=" << entry.count << std::endl;
 
         if (entry.count == 0) {
             if (entry.is_last_req) {
@@ -482,28 +469,20 @@ void LocalMemReader::tick() {
                 VirgoRspIn.push(resp);
                 scratchpad_state_.reset();
             }
+
+            scratchpad_pending_reqs_.release(rsp.tag);
+            ScratchpadRspOut.pop();
         }
     }
 }
 
-/*
-struct pending_req_t {
-    bool is_last_req; // last row in the req
-    std::vector<uint64_t> addrs;
-    uint32_t count;
-    uint32_t orig_count;
-};
-
-BitVector<> mask;
-std::vector<uint64_t> addrs;
-bool     write;
-uint32_t tag;
-uint32_t cid;
-uint64_t uuid; 
-LsuReq type */
-
 void LocalMemReader::reset() {
-    // todo - this
+    lmem_state_A_.reset();
+    lmem_state_B_.reset();
+    lmem_workload_ = 0;
+    scratchpad_state_.reset();
+    lmem_pending_reqs_.clear();
+    scratchpad_pending_reqs_.clear();
 }
 
 SystolicArray::SystolicArray(const SimContext& ctx, const char* name, uint32_t tile_size, uint32_t array_size) 
@@ -604,25 +583,29 @@ SystolicArray::SystolicArray(const SimContext& ctx, const char* name, uint32_t t
         }
     }
 }
+
 SystolicArray::~SystolicArray() {}
 void SystolicArray::tick() {
 
     // 1. Request Routing
     if (!ReqIn.empty()) {
         auto& req = ReqIn.front();
+        std::cout << "got systolic array req from Virgo controller tag =" << req.tag <<std::endl;
+        
         preload_queueOut.push(req);
         ReqIn.pop();
     }
 
     // 2. Preload Logic (Matrix B)
-    if (!preload_active_ && !preload_queueOut.empty()) {
-        preload_req_ = preload_queueOut.front();
-        preload_queueOut.pop();
+    if (!preload_active_ && !preload_queueIn.empty()) {
+        preload_req_ = preload_queueIn.front();
+        preload_queueIn.pop();
         preload_active_ = true;
         preload_row_counter_ = 0;
     }
 
     if (preload_active_) {
+        //std::cout << "preloading" << std::endl;
         // Issue LsuReqs for weights
         if (preload_row_counter_ < preload_req_.num_rows) {
             if (!pending_scratchpad_reqs_.full()) {
@@ -650,6 +633,7 @@ void SystolicArray::tick() {
                         count
                     });
                     req.tag = tag;
+                    std::cout << "Scratch req, preload_row_counter_=" << preload_row_counter_ << ", tag=" << tag << std::endl;
                     ScratchReadReqOut.push(req, 1);
                     preload_row_counter_++;
                 }
@@ -657,35 +641,58 @@ void SystolicArray::tick() {
         } 
 
         //get LsuRsps
-        if (!ScratchReadRspIn.empty()) {
-            auto& rsp = ScratchReadRspIn.front();
-            auto& entry = pending_scratchpad_reqs_.at(rsp.tag);
-            
-            if (entry.is_weight) {
-                entry.count -= rsp.mask.count();
-                if (entry.count == 0) {
-                    
-                    for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
-                        in_b[i].push(rsp.tag);
-                        load_en_in[i].push(true);
-                    }
-
-                    if (entry.row_num == preload_req_.num_rows - 1) {
-                        compute_queueOut.push(preload_req_, tile_size_ * array_size_);
-                        preload_active_ = false;
-                    }
-
-                    pending_scratchpad_reqs_.release(rsp.tag);
-                } 
-                ScratchReadRspIn.pop();
-            }    
-        }
     }
 
+    if (!ScratchReadRspIn.empty()) {
+        auto& rsp = ScratchReadRspIn.front();
+        ScratchReadRspIn.pop();
+        std::cout << "scratch Response any, tag=" << rsp.tag << std::endl;
+        auto& entry = pending_scratchpad_reqs_.at(rsp.tag);
+        
+        if (entry.is_weight) {
+            //weight preload rsp
+            entry.count -= rsp.mask.count();
+            if (entry.count == 0) {
+                std::cout << "scratchpadRsp" << std::endl;
+                
+                for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
+                    in_b[i].push(rsp.tag);
+                    load_en_in[i].push(true);
+                }
+
+                if (entry.row_num == preload_req_.num_rows - 1) {
+                    compute_queueOut.push(preload_req_, tile_size_ * array_size_);
+                    preload_active_ = false;
+                }
+
+                pending_scratchpad_reqs_.release(rsp.tag);
+            } 
+        } else {
+            //input matrix response
+            entry.count -= rsp.mask.count();
+            if (entry.count == 0) {
+            uint32_t tag = pending_array_reqs_.allocate({
+                compute_req_.tag,
+                false,
+                entry.row_num,
+                array_size_ * tile_size_
+            });
+
+            for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
+                in_a[i].push(tag, i + 1);
+                in_valid[i].push(true, i + 1);
+                in_c[i].push(tag, i + 1);
+                flip_reg_in[i].push(tag & 1, i + 1);
+            }
+            pending_scratchpad_reqs_.release(rsp.tag);
+            }
+        }
+    }
     // 3. Compute Logic (Matrix A)
-    if (!compute_active_ && !compute_queueOut.empty()) {
-        compute_req_ = compute_queueOut.front();
-        compute_queueOut.pop();
+    if (!compute_active_ && !compute_queueIn.empty()) {
+        std::cout << "finished Preload" << std::endl;
+        compute_req_ = compute_queueIn.front();
+        compute_queueIn.pop();
         compute_active_ = true;
         accum_counter_ = 0;
         compute_counter_ = 0;
@@ -694,6 +701,7 @@ void SystolicArray::tick() {
     if (compute_active_) {
         // Only issue if we have pending slots
         if (!pending_scratchpad_reqs_.full()) {
+            std::cout << "input scratchpad req" << std::endl;
              LsuReq req(array_size_ * tile_size_);
              req.write = false;
 
@@ -721,73 +729,61 @@ void SystolicArray::tick() {
          }
 
          // Handle Responses
-         if (!ScratchReadRspIn.empty()) {
-             auto& rsp = ScratchReadRspIn.front();
-             auto& entry = pending_scratchpad_reqs_.at(rsp.tag);
-
-             if (!entry.is_weight) {
-                 entry.count -= rsp.mask.count();
-                 if (entry.count == 0) {
-                    uint32_t tag = pending_array_reqs_.allocate({
-                        compute_req_.tag,
-                        false,
-                        entry.row_num,
-                        array_size_ * tile_size_
-                    });
-
-                    for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
-                        in_a[i].push(tag, i + 1);
-                        in_valid[i].push(true, i + 1);
-                        in_c[i].push(tag, i + 1);
-                        flip_reg_in[i].push(tag & 1, i + 1);
-                    }
-                    pending_scratchpad_reqs_.release(rsp.tag);
-                 }
-                 ScratchReadRspIn.pop();
-             }
-         }
+         
 
          //Handle responses from systolic array
          for (uint32_t i = 0; i < array_size_ * tile_size_; ++i) {
             if (!out_c[i].empty()) {
                 uint32_t tag = out_c[i].front();
-                auto& entry = pending_array_reqs_.at(tag);
-                entry.count--;
-                if (entry.count == 0) {
-                    pending_array_reqs_.release(tag);
-                    LsuReq req(array_size_ * tile_size_);
-                    req.write = true;
-                    uint32_t count = 0;     
-                    for (uint32_t j = 0; j < array_size_ * tile_size_; ++j) {
-                        req.addrs[j] = compute_req_.accum_addr + (entry.row_num * array_size_ * tile_size_ + j) * 4;
-                        req.mask.set(j);    
-                        count++;
-                    }
-
-                    auto accum_tag = pending_accumulator_reqs_.allocate({
-                        compute_req_.tag,
-                        false,
-                        entry.row_num,
-                        count
-                    });
-                    req.tag = accum_tag;
-                    AccumWriteReqOut.push(req, 1);
-                }
                 out_c[i].pop();
+                 std::cout << "sysarrayRsp tag=" << tag << std::endl;
+                if (tag <= 4 ) {
+                    auto& entry = pending_array_reqs_.at(tag);
+                    std::cout << "got entry" << std::endl;
+                    entry.count--;
+                    if (entry.count == 0) {
+                        std::cout << "sending Accum" << std::endl;
+                        pending_array_reqs_.release(tag);
+                        LsuReq req(array_size_ * tile_size_);
+                        req.write = true;
+                        uint32_t count = 0;     
+                        for (uint32_t j = 0; j < array_size_ * tile_size_; ++j) {
+                            req.addrs[j] = compute_req_.accum_addr + (entry.row_num * array_size_ * tile_size_ + j) * 4;
+                            req.mask.set(j);    
+                            count++;
+                        }
+
+                        auto accum_tag = pending_accumulator_reqs_.allocate({
+                            compute_req_.tag,
+                            false,
+                            entry.row_num,
+                            count
+                        });
+                        req.tag = accum_tag;
+                        AccumWriteReqOut.push(req, 1);
+                    }
+                } 
             }
          }
 
          if (!AccumWriteRspIn.empty()) {
+            std::cout << "accumRsp" << std::endl;
             auto& rsp = AccumWriteRspIn.front();
+            AccumWriteRspIn.pop();
             auto& entry = pending_accumulator_reqs_.at(rsp.tag);
             entry.count -= rsp.mask.count();
             if (entry.count == 0) {
                 pending_accumulator_reqs_.release(rsp.tag);
                 if (entry.row_num == compute_req_.num_rows - 1) {
+                    std::cout << "Send Finished to Control tag=" << compute_req_.tag << std::endl;
                     compute_active_ = false;
+                    SysArrRsp rsp;
+                    rsp.tag = compute_req_.tag;
+                    RspOut.push(rsp);
                 }
             }
          }  
+         
     }
     
     //empty dummy ports
@@ -884,17 +880,21 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     , DmaRspIn(this)
     , LMemReqOut(this)
     , LMemRspOut(this)
+    , SysReqOut(this)
+    , SysRspOut(this)
     , cluster_(cluster)
     , arch_(arch)
     , write_registers(arch.num_cores()*arch.num_warps()*9, 0)
     , read_registers(arch.num_cores()*arch.num_warps(), 0)
     , tag_table(4) // number of max in-flight matmul unit instructions
-    , accum_mem_(ctx, StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE)
-    , systolic_array_(ctx, StrFormat("systolic_array%d", cluster->id()).c_str(), 4, 2)
     , perf_stats_()
+    , pending_sys_reqs_(16)
+
 {
     scratchpad_mem_ = ScratchPadMem::Create(StrFormat("scratchpad_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE);
     local_mem_reader_ = LocalMemReader::Create(StrFormat("local_mem_reader%d", cluster->id()).c_str());
+    systolic_array_ = SystolicArray::Create(StrFormat("systolic_array%d", cluster->id()).c_str(), 2, 2);
+    accum_mem_ = AccumulatorMem::Create(StrFormat("accum_mem%d", cluster->id()).c_str(), 1 << LMEM_LOG_SIZE);
 
     // bind localmemreader and scratchpad
     local_mem_reader()->ScratchpadReqOut.bind(&scratchpad_mem()->WriteReqIn);
@@ -904,11 +904,19 @@ Virgo_MatMul::Virgo_MatMul(const SimContext& ctx,
     LMemReqOut.bind(&local_mem_reader()->VirgoReqIn);
     local_mem_reader()->VirgoRspIn.bind(&LMemRspOut);
 
-    inflight_inst = false;
+    inflight_localmem_req = false;
 
-    // Bind Accumulator Ports
-    systolic_array_.AccumWriteReqOut.bind(&accum_mem_.WriteReqIn);
-    accum_mem_.WriteRspOut.bind(&systolic_array_.AccumWriteRspIn);
+    // bind systolic array to accumulator
+    systolic_array_->AccumWriteReqOut.bind(&accum_mem_->WriteReqIn);
+    accum_mem_->WriteRspOut.bind(&systolic_array_->AccumWriteRspIn);
+    
+    // bind systolic array to scratchpad
+    systolic_array_->ScratchReadReqOut.bind(&scratchpad_mem_->ReadReqIn);
+    scratchpad_mem_->ReadRspOut.bind(&systolic_array_->ScratchReadRspIn);
+
+    // bind virgo MM controller to systolic array
+    SysReqOut.bind(&systolic_array_->ReqIn);
+    systolic_array_->RspOut.bind(&SysRspOut);
 }
 
 Virgo_MatMul::~Virgo_MatMul() {}
@@ -916,7 +924,7 @@ Virgo_MatMul::~Virgo_MatMul() {}
 void Virgo_MatMul::read(const void* data, uint64_t addr, uint32_t /* size */) {
     uint32_t* d = (uint32_t*) data;
     uint32_t super_index = ((static_cast<uint32_t>(addr) - (MMIO_VIRGO_BASE_READ_ADDR)) & 0xFFFF ) >> 2;
-    std::cout << "Virgo read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_VIRGO_BASE_READ_ADDR << ", data " << *d << std::endl;
+    // std::cout << "Virgo read from index " << super_index << ", addr  " << std::hex << addr << ", MMIO " << std::hex << MMIO_VIRGO_BASE_READ_ADDR << ", data " << *d << std::endl;
     *d = read_registers.at(super_index);
 
     perf_stats_.reads++;
@@ -991,8 +999,8 @@ void Virgo_MatMul::MatMul(const virgo_req_t& virgo_compute_entry) {
                 float sum = 0;
                 if (virgo_compute_entry.accum) {
                     uint32_t offset = virgo_compute_entry.accum_addr + (i * num_cols_B + j) * 4;
-                    if (offset + 4 <= accum_mem_.size()) {
-                        accum_mem_.read(&sum, offset, 4);
+                    if (offset + 4 <= accum_mem_->size()) {
+                        accum_mem_->read(&sum, offset, 4);
                     } else {
                         std::cout << "Error: Accumulator memory read out of bounds at offset " << offset << std::endl;
                     }
@@ -1036,8 +1044,8 @@ void Virgo_MatMul::MatMul(const virgo_req_t& virgo_compute_entry) {
                 // dest_addr[i * num_cols_B + j] = sum;
                 // Store result back to accumulator memory
                 uint32_t offset = virgo_compute_entry.accum_addr + (i * num_cols_B + j) * 4;
-                if (offset + 4 <= accum_mem_.size()) {
-                    accum_mem_.write(&sum, offset, 4);
+                if (offset + 4 <= accum_mem_->size()) {
+                    accum_mem_->write(&sum, offset, 4);
                 } else {
                     std::cout << "Error: Accumulator memory write out of bounds at offset " << offset << std::endl;
                 }
@@ -1067,10 +1075,6 @@ void Virgo_MatMul::MatMul(const virgo_req_t& virgo_compute_entry) {
         //     }
         // }
     }
-
-    for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
-        read_registers.at(i)--;
-    }
 }
 
 void Virgo_MatMul::attach_ram(RAM* ram) {
@@ -1082,13 +1086,28 @@ void Virgo_MatMul::attach_ram(RAM* ram) {
 }
 
 void Virgo_MatMul::reset() {
+    for (int i = 0; i < write_registers.size(); i++) {
+        write_registers[i] = 0;
+    }
+    for (int i = 0; i < read_registers.size(); i++) {
+        read_registers[i] = 0;
+    }
+    for (int i = 0; i < tag_table.size(); i++) {
+        tag_table[i].reset();
+    }
+    
+    std::queue<virgo_req_t> empty;
+    std::swap(virgo_req_queue_, empty);
+
+    pending_sys_reqs_.clear();
+    inflight_localmem_req = false;
 }
 
 // Virgo MatMul controller
 void Virgo_MatMul::tick() {
     if (!ReqIn.empty()) { // ReqIn for MMIO
         auto& req = ReqIn.front();
-        std::cout << "Virgo Matmul Tick: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
+        //std::cout << "Virgo MMIO: Read Req tag=" << req.tag << " mask=" << req.mask << std::endl;
         LsuRsp rsp(LSU_CHANNELS);
         rsp.tag = req.tag;
         rsp.cid = req.cid;
@@ -1098,22 +1117,87 @@ void Virgo_MatMul::tick() {
         ReqIn.pop();
     }
 
-    if (!virgo_req_queue_.empty()) {
+    if (!virgo_req_queue_.empty()) {   
         auto virgo_req_entry = virgo_req_queue_.front();
-        if (!inflight_inst) {
+        if (!inflight_localmem_req) {
+            std::cout << "matmul start" << std::endl;
             LMemReqOut.push(virgo_req_entry, 6);
-            inflight_inst = true;
+            inflight_localmem_req = true;
         }
     }
 
-    if (!virgo_rsp_queue_.empty()) {
+    if (!LMemRspOut.empty()) {
         // received a response
-        auto virgo_rsp_entry = virgo_rsp_queue_.front();
-        virgo_req_queue_.pop(); // can pop the req that's associated with this rsp, can serve next req
-        inflight_inst = false;
+        std::cout << "received lmem response" << std::endl;
+        auto& virgo_rsp = LMemRspOut.front();
+        auto& virgo_req = virgo_req_queue_.front();
+        virgo_req_queue_.pop(); // can serve next req
 
-        
+        inflight_localmem_req = false;
+
+        uint32_t tag = pending_sys_reqs_.allocate(virgo_req);
+
+        SysArrReq req = {
+            virgo_rsp.scratchpad_src_addr_A,
+            virgo_rsp.scratchpad_src_addr_B,
+            virgo_req.num_rows_A,
+            virgo_req.num_cols_A,
+            virgo_req.accum_addr,
+            virgo_req.data_type,
+            tag,
+        };
+        std::cout << "pushing req to Sys tag=" << req.tag << std::endl;
+
+        SysReqOut.push(req, 1);
+
+        LMemRspOut.pop();
     }
+
+    if (!SysRspOut.empty()) { // received response from systolic array
+        std::cout << "received systolic array rsp" << std::endl;
+        auto& rsp = SysRspOut.front();
+        auto& pending_sys_req = pending_sys_reqs_.at(rsp.tag);
+        pending_sys_reqs_.release(rsp.tag);
+
+        if (pending_sys_req.store) {
+            std::cout << "move from accum to shared/global mem" << std::endl;
+            // need to use DMA to store from accumulator memory into destination address, either shared or global memory
+            uint32_t data_type_size = (pending_sys_req.data_type == FP32) ? 4 : 2;
+
+            MatMulDmaReq req = {
+                pending_sys_req.accum_addr,
+                pending_sys_req.dst_addr,
+                pending_sys_req.num_rows_A,
+                pending_sys_req.num_cols_B,
+                data_type_size,
+                rsp.tag
+            };
+            DmaReqOut.push(req);
+        } else {
+            // finished request
+            std::cout << "decrementing read" << std::endl;
+            for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+                read_registers.at(i)--;
+            }
+        }
+
+        SysRspOut.pop();
+    }
+
+    if (!DmaRspIn.empty()) { // received response from DMA
+        // auto& rsp = DmaRspIn.front();
+        std::cout << "received dma response" << std::endl;
+
+        // received response! happy!
+        // indicate that we've finished request.
+        std::cout << "decrementing read DMA" << std::endl;
+        for (uint32_t i = 0; i < arch_.num_cores()*arch_.num_warps(); i++) {
+            read_registers.at(i)--;
+        }
+        DmaRspIn.pop();
+    }
+
+
 }
 
 const Virgo_MatMul::PerfStats& Virgo_MatMul::perf_stats() const {

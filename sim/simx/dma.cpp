@@ -597,6 +597,7 @@ void Virgo_DMA::tick() {
     
     // MatMul Req Handling
     if (!MatMulReqIn.empty()) {
+        std::cout << "recv matmul in dma" << std::endl;
         auto& req = MatMulReqIn.front();
         dma_load_t dma_load = {
             .src_addr = req.src_addr,
@@ -609,7 +610,7 @@ void Virgo_DMA::tick() {
             .is_accum = true,
             .tag = req.tag,
         };
-        dma_load_queue_.push(dma_load);
+        DmaLoadReqOut.push(dma_load);
         MatMulReqIn.pop();
     }
     

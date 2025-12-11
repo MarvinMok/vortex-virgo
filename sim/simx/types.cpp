@@ -87,7 +87,7 @@ void LocalMemSwitch::tick() {
     LsuReq out_mmio_req(out_dc_req);
     LsuRsp out_mmio_rsp(in_req.mask.size());
 
-    LsuReq out_virgo_mmio_req(out_dc_req); // not really sure what out_dc_req is? just in_req.mask.size() maybe
+    LsuReq out_virgo_mmio_req(out_dc_req);
     LsuRsp out_virgo_mmio_rsp(in_req.mask.size());
 
     for (uint32_t i = 0; i < in_req.mask.size(); ++i) {
@@ -137,7 +137,7 @@ void LocalMemSwitch::tick() {
     }
 
     if (!out_virgo_mmio_req.mask.none()) {
-      std::cout << "LmemSwitch: Pushing VIRGO MMIO req. tag=" << in_req.tag << ", cid=" << in_req.cid << ", uuid=" << in_req.uuid << std::endl;
+      //std::cout << "LmemSwitch: Pushing VIRGO MMIO req. tag=" << out_virgo_mmio_req.tag << ", cid=" << out_virgo_mmio_req.cid << ", uuid=" << out_virgo_mmio_req.uuid << std::endl;
       ReqVirgoMMIO.push(out_virgo_mmio_req, delay_);
       DT(4, this->name() << "-virgo-mmio-req: " << out_virgo_mmio_req);
     }
@@ -221,9 +221,9 @@ void LsuMemAdapter::tick() {
         // send memory request
         ReqOut.at(i).push(out_req, delay_);
         //DT(4, this->name() << "-req" << i << ": " << out_req);
-        if (this->name() == "cluster0-lsu_lmem_adapter") {
-         std::cout << "LsuMemAdapter: " << this->name() << ", Pushing MemReq to port " << i << " tag=" << out_req.tag << " addr=" << std::hex << out_req.addr << std::dec << std::endl;
-        }
+        // if (this->name() == "cluster0-lsu_lmem_adapter") {
+        //  std::cout << "LsuMemAdapter: " << this->name() << ", Pushing MemReq to port " << i << " tag=" << out_req.tag << " addr=" << std::hex << out_req.addr << std::dec << std::endl;
+        // }
         
       }
     }

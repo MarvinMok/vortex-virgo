@@ -14,27 +14,7 @@ namespace vortex {
 
 class Cluster;
 
-typedef struct {
-    uint32_t src_addr_A;
-    uint32_t src_addr_B;
-    uint32_t dst_addr;
-    uint32_t data_type;
-    uint32_t num_rows_A; // [rows_A x cols_A] x [cols_A x cols_B] = [rows_A x cols_B]
-    uint32_t num_cols_A; 
-    uint32_t num_cols_B;
-    uint32_t accum_addr;
-    uint32_t  tag;
-    bool store;
-    bool accum;
-} virgo_req_t;
-
-typedef struct {
-    uint64_t scratchpad_src_addr_A;
-    uint64_t scratchpad_src_addr_B;
-} virgo_rsp_t;
-
 #define SCRATCHPAD_BANKS NUM_LSU_LANES
-
 #define SCRATCHPAD_TILE_A_1 0
 #define SCRATCHPAD_TILE_B_1 1024
 #define SCRATCHPAD_TILE_A_2 2048
@@ -194,7 +174,7 @@ public:
     std::vector<SimPort<uint32_t>> out_valid;
 
     // New Ports
-    SimPort<SysArrReq> ReqIn;
+    SimPort<SysArrReq> ReqIn; // from Virgo MM controller
     SimPort<SysArrRsp> RspOut;
     SimPort<LsuReq> ScratchReadReqOut;
     SimPort<LsuRsp> ScratchReadRspIn;
@@ -250,7 +230,10 @@ SimPort<MatMulDmaReq> DmaReqOut;
 SimPort<MatMulDmaRsp> DmaRspIn;
 
 SimPort<virgo_req_t> LMemReqOut;
-SimPort<virgo_rsp_t> LMemRspOut; // might change the types
+SimPort<virgo_rsp_t> LMemRspOut;
+
+SimPort<SysArrReq> SysReqOut;
+SimPort<SysArrRsp> SysRspOut;
 
 void read(const void* data, uint64_t addr, uint32_t size);
 void write(const void* data, uint64_t addr, uint32_t size);
@@ -260,8 +243,8 @@ void reset();
 void tick();
 
 // Exposed ports for AccumulatorMem
-AccumulatorMem* accum_mem() {
-    return &accum_mem_;
+const AccumulatorMem::Ptr&  accum_mem() const {
+    return accum_mem_;
 }
 
 Cluster* cluster() const {
@@ -290,14 +273,15 @@ private:
     std::vector<uint32_t> read_registers;
     std::vector<std::bitset<32>> tag_table;
     std::queue<virgo_req_t> virgo_req_queue_;
-    std::queue<virgo_rsp_t> virgo_rsp_queue_;
     MemoryUnit mmu_;
-    AccumulatorMem accum_mem_;
+    AccumulatorMem::Ptr accum_mem_;
     ScratchPadMem::Ptr scratchpad_mem_;
     LocalMemReader::Ptr local_mem_reader_;
-    SystolicArray systolic_array_;
+    SystolicArray::Ptr systolic_array_;
     PerfStats perf_stats_;
-    bool inflight_inst;
+    HashTable<virgo_req_t> pending_sys_reqs_;
+    bool inflight_localmem_req;
+    
 };
 
 }
