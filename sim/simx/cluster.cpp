@@ -88,7 +88,7 @@ Cluster::Cluster(const SimContext& ctx,
 
   // create Core Arbiter (type MemArbiter), one output
   snprintf(sname, 100, "%s-core_arb", this->name().c_str());
-  auto core_arb = LsuArbiter::Create(sname, ArbiterType::RoundRobin, NUM_SOCKETS + 2, 1); // + 2 , one for DMA, one for LocalMemReader in Virgo_MatMul
+  auto core_arb = LsuArbiter::Create(sname, ArbiterType::Dma, NUM_SOCKETS + 2, 1); // + 2 , one for DMA, one for LocalMemReader in Virgo_MatMul
 
   // create lmem adapter
   snprintf(sname, 100, "%s-lsu_lmem_adapter", this->name().c_str());

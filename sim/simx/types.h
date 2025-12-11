@@ -804,7 +804,8 @@ struct SysArrRsp {
 enum class ArbiterType {
   Priority,
   RoundRobin,
-  Matrix
+  Matrix,
+  Dma
 };
 
 inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
@@ -812,6 +813,7 @@ inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
   case ArbiterType::Priority:   os << "Priority"; break;
   case ArbiterType::RoundRobin: os << "RoundRobin"; break;
   case ArbiterType::Matrix:     os << "Matrix"; break;
+  case ArbiterType::Dma:        os << "Dma"; break;
   default: assert(false);
   }
   return os;
@@ -929,6 +931,39 @@ private:
   std::vector<std::vector<bool>> priority_matrix_;
 };
 
+class DmaMemArbiter : public IArbiterImpl {
+public:
+  DmaMemArbiter(uint32_t size) : size_(size) {
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    if (requests.test(size_-1)) {
+      return size_-1;
+    } else if (requests.test(size_-2)) {
+      return size_-2;
+    }
+    uint32_t start = (last_grant_ + 1) % size_;
+    for (uint32_t i = 0; i < size_; ++i) {
+      uint32_t idx = (start + i) % size_;
+      if (requests.test(idx)) {
+        last_grant_ = idx;
+        return idx;
+      }
+    }
+    return -1;
+  }
+
+  void reset() override {
+    last_grant_ = 0;
+  }
+
+private:
+  uint32_t size_;
+  uint32_t last_grant_;
+};
+
 class Arbiter {
 public:
   Arbiter(ArbiterType type = ArbiterType::Priority, uint32_t size = 0) {
@@ -941,6 +976,9 @@ public:
       break;
     case ArbiterType::Matrix:
       impl_ = std::make_shared<MatrixArbiter>(size);
+      break;
+    case ArbiterType::Dma:
+      impl_ = std::make_shared<DmaMemArbiter>(size);
       break;
     default:
       assert(false); // Should never reach here
